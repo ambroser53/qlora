@@ -310,6 +310,8 @@ def get_accelerate_model(args, checkpoint_dir):
     else:
         max_memory = ast.literal_eval(args.cuda_device)
 
+    print(max_memory)
+
     if args.full_finetune: assert args.bits in [16, 32]
 
     print(f'loading base model {args.model_name_or_path}...')
