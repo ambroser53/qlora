@@ -36,6 +36,7 @@ from peft import (
     LoraConfig,
     get_peft_model,
     get_peft_model_state_dict,
+    set_peft_model_state_dict,
     PeftModel
 )
 from peft.tuners.lora import LoraLayer
@@ -58,6 +59,11 @@ class ModelArguments:
         default=False,
         metadata={"help": "Enable unpickling of arbitrary code in AutoModelForCausalLM#from_pretrained."}
     )
+    merge_and_unload: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Merge the automodel and the peft model."}
+    )
+
 
 @dataclass
 class DataArguments:
@@ -90,12 +96,16 @@ class DataArguments:
         default='alpaca',
         metadata={"help": "Which dataset to finetune on. See datamodule for options."}
     )
+    custom_eval_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "If specified, use this directory for evaluation instead of the default one."}
+    )
     eval_only_dataset: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether when doing evaluation, the entered dataset is entirely evaluation split, no need for"
                           " additional train/val/eval split."}
     )
-    test_checkpoint: Optional[bool] = field(
+    test_last_checkpoint: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to test the last checkpoint or the best checkpoint for eval only."}
     )
@@ -113,6 +123,15 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
         default=False,
         metadata={"help": "Whether to load a trainer checkpoint with the checkpoint_dir or just QLoRA weights from "
                           "adapter_model subdirectory."}
+    )
+    force_lora_training: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to force training the LORA layers. "
+                          "(e.g. when loading a checkpoint without trainer checkpoint)"}
+    )
+    big_gpu: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether using a big GPU (e.g. 32GB or over)."}
     )
     train_on_source: Optional[bool] = field(
         default=False,
@@ -196,6 +215,10 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
     save_strategy: str = field(default='steps', metadata={"help": 'When to save checkpoints'})
     save_steps: int = field(default=250, metadata={"help": 'How often to save a model'})
     save_total_limit: int = field(default=40, metadata={"help": 'How many checkpoints to save before the oldest is overwritten'})
+    lora_bias: str = field(default=None, metadata={"help": 'Whether to use bias in the lora layers'})
+    originally_distributed: bool = field(default=None, metadata={"help": 'Whether the LoRA weights were originally '
+                                                                        'trained in a distributed setting and trying '
+                                                                        'to train now on a single cuda device'})
 
 @dataclass
 class GenerationArguments:
@@ -227,7 +250,11 @@ class GenerationArguments:
     diversity_penalty: Optional[float] = field(default=0.0) 
     repetition_penalty: Optional[float] = field(default=1.0) 
     length_penalty: Optional[float] = field(default=1.0)
-    no_repeat_ngram_size: Optional[int] = field(default=0) 
+    no_repeat_ngram_size: Optional[int] = field(default=0)
+
+    def update(self, args):
+        for key, value in args.items():
+            setattr(self, key, value)
 
 def find_all_linear_names(args, model):
     cls = bnb.nn.Linear4bit if args.bits == 4 else (bnb.nn.Linear8bitLt if args.bits == 8 else torch.nn.Linear)
@@ -274,7 +301,9 @@ def get_accelerate_model(args, checkpoint_dir):
     import ast
 
     n_gpus = torch.cuda.device_count()
-    if args.cuda_device == "auto":
+    if args.merge_and_unload:
+        max_memory = {'cpu': f'{2*args.max_memory_MB}MB'}
+    elif args.cuda_device == "auto":
         max_memory = f'{args.max_memory_MB}MB'
         max_memory = {i: max_memory for i in range(n_gpus)}
     else:
@@ -286,19 +315,19 @@ def get_accelerate_model(args, checkpoint_dir):
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
-        load_in_4bit=args.bits == 4,
-        load_in_8bit=args.bits == 8,
-        device_map="auto",
-        max_memory=max_memory,
+        load_in_4bit=args.bits == 4 and not args.merge_and_unload,
+        load_in_8bit=args.bits == 8 and not args.merge_and_unload,
+        device_map="auto" if not args.merge_and_unload or args.big_gpu else "cpu",
+        max_memory=max_memory if not args.merge_and_unload else None,
         quantization_config=BitsAndBytesConfig(
-            load_in_4bit=args.bits == 4,
-            load_in_8bit=args.bits == 8,
+            load_in_4bit=args.bits == 4 and not args.merge_and_unload,
+            load_in_8bit=args.bits == 8 and not args.merge_and_unload,
             llm_int8_threshold=6.0,
             llm_int8_has_fp16_weight=False,
             bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=args.double_quant,
             bnb_4bit_quant_type=args.quant_type # {'fp4', 'nf4'}
-        ),
+        ) if not args.merge_and_unload else None,
         torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)),
         trust_remote_code=args.trust_remote_code,
     )
@@ -325,15 +354,19 @@ def get_accelerate_model(args, checkpoint_dir):
         lora_alpha=args.lora_alpha,
         target_modules=modules,
         lora_dropout=args.lora_dropout,
-        bias="none",
+        bias="none" if not args.lora_bias else args.lora_bias,  # options are: 'all' and 'lora_only'
         task_type="CAUSAL_LM",
     )
     if not args.full_finetune:
         if checkpoint_dir is not None:
             print("Loading adapters from checkpoint:" + checkpoint_dir)
+            if args.force_lora_training:
+                print("forcing all lora weights to be trainable")
             model = PeftModel.from_pretrained(model, join(checkpoint_dir, 'adapter_model'))
             for name, p in model.named_parameters():
                 if 'lora' in name:
+                    if args.force_lora_training:
+                        p.requires_grad_(True)
                     print(name, p.sum())
         else:
             print(f'adding LoRA modules...')
@@ -366,10 +399,12 @@ def print_trainable_parameters(args, model):
     """
     trainable_params = 0
     all_param = 0
+
     for _, param in model.named_parameters():
         all_param += param.numel()
         if param.requires_grad:
             trainable_params += param.numel()
+
     if args.bits == 4: trainable_params /= 2
     print(f"trainable params: {trainable_params} || all params: {all_param} || trainable: {100 * trainable_params / all_param}")
 
@@ -441,7 +476,7 @@ class DataCollatorForCausalLM(object):
         labels = pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX) if not self.predict_with_generate else None
         data_dict = {
             'input_ids': input_ids,
-            'attention_mask':input_ids.ne(self.tokenizer.pad_token_id),
+            'attention_mask': input_ids.ne(self.tokenizer.pad_token_id),
         }
         if labels is not None:
             data_dict['labels'] = labels
@@ -545,7 +580,10 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         raise NotImplementedError("Vicuna data was not released.")
     else:
         # Own dataset
-        dataset = load_dataset("json", data_files=args.dataset)
+        if args.custom_eval_dir:
+            dataset = load_dataset("json", data_files={"train": args.dataset, "eval": args.custom_eval_dir})
+        else:
+            dataset = load_dataset("json", data_files=args.dataset, field='train')
         dataset = dataset.map(extract_alpaca_dataset, remove_columns=['instruction'])
 
     # Split train/eval, reduce size
@@ -611,12 +649,41 @@ def train():
     )
     
 
-    checkpoint_dir, completed_training = get_last_checkpoint(args.output_dir, args.test_checkpoint)
+    checkpoint_dir, completed_training = get_last_checkpoint(args.output_dir, args.test_last_checkpoint)
     if completed_training:
         print('Detected that training was already completed!')
 
     model = get_accelerate_model(args, checkpoint_dir)
     training_args.skip_loading_checkpoint_weights=True
+
+    resume_from_checkpoint = checkpoint_dir
+    if resume_from_checkpoint:
+        # Check the available weights and load them
+        checkpoint_name = os.path.join(
+            checkpoint_dir, "pytorch_model.bin"
+        )  # Full checkpoint
+        if not os.path.exists(checkpoint_name):
+            checkpoint_path = os.path.join(
+                checkpoint_dir, "adapter_model"
+            )
+
+            checkpoint_name = os.path.join(
+                checkpoint_path, "adapter_model.bin"
+            )  # only LoRA model - LoRA config above has to fit
+            resume_from_checkpoint = (
+                False  # So the trainer won't try loading its state
+            )
+        # The two files above have a different name depending on how they were saved, but are actually the same.
+        if os.path.exists(checkpoint_name):
+            print(f"Restarting from {checkpoint_name}")
+            if args.originally_distributed:
+                print(f"Loading checkpoint with map_location='cuda:0'")
+                adapters_weights = torch.load(checkpoint_name, map_location='cuda:0')
+            else:
+                adapters_weights = torch.load(checkpoint_name)
+            set_peft_model_state_dict(model, adapters_weights)
+        else:
+            print(f"Checkpoint {checkpoint_name} not found")
 
     model.config.use_cache = False
     print_trainable_parameters(args, model)
@@ -639,7 +706,7 @@ def train():
     if isinstance(tokenizer, LlamaTokenizerFast):
         # LLaMA tokenizer may not have correct special tokens set.
         # Check and add them if missing to prevent them from being parsed into different tokens.
-        # Note that these are present in the vocabulary. 
+        # Note that these are present in the vocabulary.
         # Note also that `model.config.pad_token_id` is 0 which corresponds to `<unk>` token.
         if tokenizer.eos_token_id != model.config.eos_token_id or tokenizer.pad_token_id != model.config.pad_token_id or tokenizer.unk_token_id != model.config.unk_token_id:
             tokenizer.add_special_tokens(
@@ -650,22 +717,12 @@ def train():
                 }
             )
 
-    data_module = make_data_module(tokenizer=tokenizer, args=args)
-    if args.eval_only_dataset:
-        outputs = []
-        with torch.no_grad():
-            for data in data_module['eval_dataset']:
-                generation_output = model.generate(
-                    input_ids=data_module['data_collator'](data),
-                    generation_config=generation_args,
-                    return_dict_in_generate=True,
-                    output_scores=True
-                )
-                s = generation_output.sequences[0]
-                outputs.append(tokenizer.decode(s))
-        with open(os.path.join(args.output_dir, "generate_outputs.json"), "w") as fout:
-            fout.write(json.dumps(outputs, indent=2))
+    if args.merge_and_unload:
+        model = model.merge_and_unload()
+        model.save_pretrained(args.output_dir+'/merged')
         return
+
+    data_module = make_data_module(tokenizer=tokenizer, args=args)
 
     trainer = Seq2SeqTrainer(
         model=model, 
@@ -753,18 +810,12 @@ def train():
     for k, v in dtypes.items():
         print(k, v, v/total)
 
-    if args.bits < 16:
-        old_state_dict = model.state_dict
-        model.state_dict = (
-            lambda self, *_, **__: get_peft_model_state_dict(self, old_state_dict())
-        ).__get__(model, type(model))
-
     all_metrics = {"run_name": args.run_name}
     # Training
     if args.do_train:
         if args.without_trainer_checkpoint:
             checkpoint_dir = None
-        train_result = trainer.train(resume_from_checkpoint=checkpoint_dir)
+        train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         metrics = train_result.metrics
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -780,10 +831,12 @@ def train():
     # Prediction
     if args.do_predict:
         logger.info("*** Predict ***")
-        prediction_output = trainer.predict(test_dataset=data_module['predict_dataset'],metric_key_prefix="predict")
+        prediction_output = trainer.predict(test_dataset=data_module['predict_dataset'],metric_key_prefix="predict",
+                                            max_length=args.target_max_len, num_beams=1)
         prediction_metrics = prediction_output.metrics
-        predictions = prediction_output.predictions
+        predictions = np.argmax(prediction_output.predictions, axis=-1)
         predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
+
         predictions = tokenizer.batch_decode(
             predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
         )
@@ -800,6 +853,115 @@ def train():
     if (args.do_train or args.do_eval or args.do_predict):
         with open(os.path.join(args.output_dir, "metrics.json"), "w") as fout:
             fout.write(json.dumps(all_metrics))
+
+
+def test():
+    hfparser = transformers.HfArgumentParser((
+        ModelArguments, DataArguments, TrainingArguments, GenerationArguments
+    ))
+    model_args, data_args, training_args, generation_args, extra_args = \
+        hfparser.parse_args_into_dataclasses(return_remaining_strings=True)
+    training_args.generation_config = transformers.GenerationConfig(**vars(generation_args))
+    args = argparse.Namespace(
+        **vars(model_args), **vars(data_args), **vars(training_args)
+    )
+
+    n_gpus = torch.cuda.device_count()
+    max_memory = f'{args.max_memory_MB}MB'
+    max_memory = {i: max_memory for i in range(n_gpus)}
+
+    if args.full_finetune: assert args.bits in [16, 32]
+
+    print(f'loading base model {args.model_name_or_path}...')
+    compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name_or_path,
+        load_in_4bit=args.bits == 4,
+        load_in_8bit=args.bits == 8,
+        device_map="auto",
+        max_memory=max_memory,
+        quantization_config=BitsAndBytesConfig(
+            load_in_4bit=args.bits == 4,
+            load_in_8bit=args.bits == 8,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=args.double_quant,
+            bnb_4bit_quant_type=args.quant_type  # {'fp4', 'nf4'}
+        ),
+        torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)),
+        trust_remote_code=args.trust_remote_code,
+    )
+    if compute_dtype == torch.float16 and args.bits == 4:
+        major, minor = torch.cuda.get_device_capability()
+        if major >= 8:
+            print('=' * 80)
+            print('Your GPU supports bfloat16, you can accelerate training with the argument --bf16')
+            print('=' * 80)
+
+    setattr(model, 'model_parallel', True)
+    setattr(model, 'is_parallelizable', True)
+
+    model.config.torch_dtype = (torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
+
+    if not args.full_finetune:
+        model = prepare_model_for_int8_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+
+    training_args.skip_loading_checkpoint_weights = True
+
+    model.config.use_cache = False
+    print_trainable_parameters(args, model)
+    print('loaded model')
+    set_seed(args.seed)
+
+    # Tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name_or_path,
+        cache_dir=args.cache_dir,
+        padding_side="right",
+        use_fast=True,
+    )
+    if tokenizer._pad_token is None:
+        smart_tokenizer_and_embedding_resize(
+            special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
+            tokenizer=tokenizer,
+            model=model,
+        )
+    if isinstance(tokenizer, LlamaTokenizerFast):
+        # LLaMA tokenizer may not have correct special tokens set.
+        # Check and add them if missing to prevent them from being parsed into different tokens.
+        # Note that these are present in the vocabulary.
+        # Note also that `model.config.pad_token_id` is 0 which corresponds to `<unk>` token.
+        if tokenizer.eos_token_id != model.config.eos_token_id or tokenizer.pad_token_id != model.config.pad_token_id or tokenizer.unk_token_id != model.config.unk_token_id:
+            tokenizer.add_special_tokens(
+                {
+                    "eos_token": tokenizer.convert_ids_to_tokens(model.config.eos_token_id),
+                    "bos_token": tokenizer.convert_ids_to_tokens(model.config.bos_token_id),
+                    "unk_token": tokenizer.convert_ids_to_tokens(model.config.pad_token_id),
+                }
+            )
+
+    data_module = make_data_module(tokenizer=tokenizer, args=args)
+    print(data_module)
+    outputs = []
+    from transformers import GenerationConfig
+    with torch.no_grad():
+        conf = GenerationConfig.from_dict(generation_args.__dict__)
+        print(conf)
+        generation_output = model.generate(
+            input_ids=data_module['data_collator'](data_module['predict_dataset'])['input_ids'].to(model.device),
+            generation_config=conf,
+            return_dict_in_generate=True,
+            output_scores=True
+        )
+        s = generation_output.sequences[0]
+        outputs.append(tokenizer.decode(s))
+        print(outputs)
+    with open(os.path.join(args.output_dir, "generate_outputs.json"), "w") as fout:
+        fout.write(json.dumps(outputs, indent=2))
+    return
 
 if __name__ == "__main__":
     train()
