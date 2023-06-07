@@ -301,6 +301,7 @@ def get_accelerate_model(args, checkpoint_dir):
     import ast
 
     n_gpus = torch.cuda.device_count()
+    print(n_gpus, ' GPUs found')
     if args.merge_and_unload:
         max_memory = {'cpu': f'{2*args.max_memory_MB}MB'}
     elif args.cuda_device == "auto":
