@@ -219,6 +219,7 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
     originally_distributed: bool = field(default=None, metadata={"help": 'Whether the LoRA weights were originally '
                                                                         'trained in a distributed setting and trying '
                                                                         'to train now on a single cuda device'})
+    accelerate_method: str = field(default='auto', metadata={"help": 'The accelerate method to use when distributing models across devices.'})
 
 @dataclass
 class GenerationArguments:
@@ -320,7 +321,7 @@ def get_accelerate_model(args, checkpoint_dir):
         args.model_name_or_path,
         load_in_4bit=args.bits == 4 and not args.merge_and_unload,
         load_in_8bit=args.bits == 8 and not args.merge_and_unload,
-        device_map="auto" if not args.merge_and_unload or args.big_gpu else "cpu",
+        device_map=args.accelerate_method if not args.merge_and_unload or args.big_gpu else "cpu",
         max_memory=max_memory if not args.merge_and_unload else None,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=args.bits == 4 and not args.merge_and_unload,
