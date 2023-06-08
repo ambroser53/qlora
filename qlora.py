@@ -27,7 +27,7 @@ from transformers import (
     LlamaTokenizerFast
 
 )
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 import evaluate
 import nltk
 
@@ -220,6 +220,7 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
                                                                         'trained in a distributed setting and trying '
                                                                         'to train now on a single cuda device'})
     accelerate_method: str = field(default='auto', metadata={"help": 'The accelerate method to use when distributing models across devices.'})
+    load_from_disk: bool = field(default=False, metadata={"help": 'Whether to load the dataset from disk or not.'})
 
 @dataclass
 class GenerationArguments:
@@ -587,7 +588,10 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         if args.custom_eval_dir:
             dataset = load_dataset("json", data_files={"train": args.dataset, "eval": args.custom_eval_dir})
         else:
-            dataset = load_dataset("json", data_files=args.dataset, field='train')
+            if args.load_from_disk:
+                dataset = load_from_disk(args.dataset)
+            else:
+                dataset = load_dataset("json", data_files=args.dataset, field='train')
         dataset = dataset.map(extract_alpaca_dataset, remove_columns=['instruction'])
 
     # Split train/eval, reduce size
