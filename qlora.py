@@ -221,6 +221,7 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
                                                                         'to train now on a single cuda device'})
     accelerate_method: str = field(default='auto', metadata={"help": 'The accelerate method to use when distributing models across devices.'})
     load_from_disk: bool = field(default=False, metadata={"help": 'Whether to load the dataset from disk or not.'})
+    device_map_disabled: bool = field(default=False, metadata={"help": 'Whether to disable the device map or not.'})
 
 @dataclass
 class GenerationArguments:
@@ -316,13 +317,18 @@ def get_accelerate_model(args, checkpoint_dir):
 
     if args.full_finetune: assert args.bits in [16, 32]
 
+    if args.device_map_disabled:
+        device_map = None
+    else:
+        device_map = args.accelerate_method if not args.merge_and_unload or args.big_gpu else "cpu"
+
     print(f'loading base model {args.model_name_or_path}...')
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         load_in_4bit=args.bits == 4 and not args.merge_and_unload,
         load_in_8bit=args.bits == 8 and not args.merge_and_unload,
-        device_map=args.accelerate_method if not args.merge_and_unload or args.big_gpu else "cpu",
+        device_map=device_map,
         max_memory=max_memory if not args.merge_and_unload else None,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=args.bits == 4 and not args.merge_and_unload,
@@ -591,7 +597,7 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
             if args.load_from_disk:
                 dataset = load_from_disk(args.dataset)
             else:
-                dataset = load_dataset("json", data_files=args.dataset, field='train')
+                dataset = load_dataset("json", data_files=args.dataset)
         dataset = dataset.map(extract_alpaca_dataset, remove_columns=['instruction'])
 
     # Split train/eval, reduce size
