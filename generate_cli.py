@@ -40,10 +40,12 @@ def main(args):
     )
 
     tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
-    model = PeftModel.from_pretrained(base_model, args.lora_weights, device_map={'': 0})
+    model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
+
+    outputs = []
 
     if not args.bits == 4 and not args.bits == 8:
         model.half()
@@ -59,11 +61,17 @@ def main(args):
         prompt = prompter.generate_prompt(instruction, input)
 
         input_ids = tokenizer.encode(prompt, return_tensors="pt")
-        print(input_ids)
+
         input_ids = input_ids.to(device)
         output_ids = model.generate(input_ids=input_ids, generation_config=generation_config)
 
-        print(tokenizer.decode(output_ids[0], skip_special_tokens=True))
+        outputs.append({
+            "instruction":instruction,
+            "input": input,
+            "response": tokenizer.decode(output_ids[0], skip_special_tokens=True),
+            "label": data["output"]
+        })
+    return outputs
 
 
 def main_one(args):
@@ -99,7 +107,7 @@ def main_one(args):
     )
 
     tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
-    model = PeftModel.from_pretrained(base_model, args.lora_weights, device_map={'': 0})
+    model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
@@ -138,4 +146,8 @@ if __name__ == "__main__":
     if args.dataset is None:
         main_one(args)
     else:
-        main(args)
+        outputs = main(args)
+        weights_name = args.lora_weights.split("/")[-1]
+        with open(weights_name+"results.txt", "w") as f:
+            for output in outputs:
+                f.write(output + "\n")
