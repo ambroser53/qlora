@@ -16,7 +16,7 @@ def main(args):
     temperature = 0.6
     top_p = 0.5
     top_k = 40
-    num_beams = 4
+    num_beams = args.num_beams
     max_new_tokens = args.max_new_tokens
 
     generation_config = GenerationConfig(
@@ -145,6 +145,7 @@ if __name__ == "__main__":
     parser.add_argument("--double_quant", type=bool, default=True)
     parser.add_argument("--quant_type", type=str, default="nf4")  # either fp4 or nf4
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
+    parser.add_argument("--num_beams", type=int, default=4)
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
