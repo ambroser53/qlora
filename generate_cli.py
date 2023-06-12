@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
     args = parser.parse_args()
 
-    if args.output_file is "eval.jsonl":
+    if args.output_file == "eval.jsonl":
         args.output_file = args.lora_weights + ".jsonl"
 
     if args.dataset is None:
