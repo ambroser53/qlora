@@ -39,7 +39,7 @@ def main(args):
         device_map={'': 0},
     )
 
-    tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
