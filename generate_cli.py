@@ -1,7 +1,7 @@
 import argparse
 import sys
 import torch
-from transformers import AutoModelForCausalLM, GenerationConfig, LlamaTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, GenerationConfig, LlamaTokenizer, BitsAndBytesConfig, AutoTokenizer
 from accelerate import infer_auto_device_map
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
@@ -116,7 +116,7 @@ def main_one(args):
         ),
     )
 
-    tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
