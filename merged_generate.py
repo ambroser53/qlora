@@ -50,6 +50,7 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
+    print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
 
     if not args.bits == 4 and not args.bits == 8:
@@ -66,7 +67,6 @@ def main(args):
         prompt = prompter.generate_prompt(instruction, input)
 
         input_ids = tokenizer.encode(prompt, return_tensors="pt")
-
         input_ids = input_ids.to(device)
         output_ids = model.generate(input_ids=input_ids, generation_config=generation_config)
 
@@ -85,7 +85,7 @@ def main_one(args):
     temperature = 0.6
     top_p = 0.5
     top_k = 40
-    num_beams = 4
+    num_beams = args.num_beams
     max_new_tokens = args.max_new_tokens
 
     generation_config = GenerationConfig(
@@ -109,9 +109,10 @@ def main_one(args):
 
     tokenizer = LlamaTokenizer.from_pretrained(args.model_name_or_path)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
+    print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
 
-    if not args.load_8bit:
+    if not args.load_8bit or args.load_4bit:
         model.half()
 
     model.eval()
@@ -123,7 +124,6 @@ def main_one(args):
     prompt = prompter.generate_prompt(instruction, input)
 
     input_ids = tokenizer.encode(prompt, return_tensors="pt")
-    print(input_ids)
     input_ids = input_ids.to(device)
     output_ids = model.generate(input_ids=input_ids, generation_config=generation_config)
 
@@ -140,6 +140,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--fp16", type=bool, default=True)
     parser.add_argument("--bf16", type=bool, default=False)
     parser.add_argument("--double_quant", type=bool, default=True)
