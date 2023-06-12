@@ -136,7 +136,7 @@ if __name__ == "__main__":
     parser.add_argument("--instruction", type=str, default=None)
     parser.add_argument("--input", type=str, default=None)
     parser.add_argument("--bits", type=int, default=4)
-    parser.add_argument("--lora_weights", type=str, default="tloen/alpaca-lora-7b")
+    parser.add_argument("--model_name_or_path", type=str, default="tloen/alpaca-lora-7b")
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=64)
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
-        args.output_file = args.lora_weights + ".jsonl"
+        args.output_file = args.model_name_or_path + ".jsonl"
 
     if args.dataset is None:
         main_one(args)
