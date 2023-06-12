@@ -1,7 +1,7 @@
 import argparse
 import sys
 import torch
-from transformers import AutoModelForCausalLM, GenerationConfig, LlamaTokenizer
+from transformers import AutoModelForCausalLM, GenerationConfig, LlamaTokenizer, BitsAndBytesConfig
 from accelerate import infer_auto_device_map
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
@@ -97,13 +97,23 @@ def main_one(args):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
+    compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     base_model = AutoModelForCausalLM.from_pretrained(
         peft_config.base_model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
-        torch_dtype=torch.float16,
+        torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)),
         device_map={'': 0},
+        quantization_config=BitsAndBytesConfig(
+            load_in_4bit=args.bits == 4 and not args.merge_and_unload,
+            load_in_8bit=args.bits == 8 and not args.merge_and_unload,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=args.double_quant,
+            bnb_4bit_quant_type=args.quant_type
+        ),
     )
 
     tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
@@ -141,6 +151,10 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=384)
+    parser.add_argument("--fp16", type=bool, default=True)
+    parser.add_argument("--bf16", type=bool, default=False)
+    parser.add_argument("--double_quant", type=bool, default=True)
+    parser.add_argument("--quant_type", type=str, default="nf4")  # either fp4 or nf4
     args = parser.parse_args()
 
     if args.dataset is None:

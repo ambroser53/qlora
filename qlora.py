@@ -324,6 +324,7 @@ def get_accelerate_model(args, checkpoint_dir):
 
     print(f'loading base model {args.model_name_or_path}...')
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
+    print(f'compute_dtype: {compute_dtype}')
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         load_in_4bit=args.bits == 4 and not args.merge_and_unload,
