@@ -8,6 +8,32 @@ from accelerate import infer_auto_device_map
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
 from datasets import load_dataset
+from torch.utils.data import DataLoader
+
+
+def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
+    dataset['train'].map(lambda x: {"data": x, "prompt":prompter.generate_prompt(x['instruction'], x['input'])})
+    batch_iter = DataLoader(dataset['train'], batch_size=args.batch_size, shuffle=False, num_workers=4)
+    for i, batch in tqdm(enumerate(batch_iter)):
+        if i < args.start_from:
+            continue
+
+        batch_input = [b['prompt'] for b in batch]
+        batch_data = [b['data'] for b in batch]
+
+        input_ids = tokenizer.batch_encode(batch_input, return_tensors="pt")
+
+        input_ids = input_ids.to(device)
+        output_ids = model.generate(input_ids=input_ids, generation_config=generation_config)
+
+        for b_data, output_id in zip(batch_data, output_ids):
+            with open(args.output_file, "a+") as f:
+                f.write(json.dumps({
+                    "instruction": b_data['instruction'],
+                    "input": b_data['input'],
+                    "response": tokenizer.decode(output_id[0], skip_special_tokens=True),
+                    "label": b_data["output"]
+                }) + '\n')
 
 
 def main(args):
@@ -16,7 +42,7 @@ def main(args):
     temperature = 0.6
     top_p = 0.5
     top_k = 40
-    num_beams = 4
+    num_beams = args.num_beams
     max_new_tokens = args.max_new_tokens
 
     generation_config = GenerationConfig(
@@ -66,7 +92,16 @@ def main(args):
     if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
         model = torch.compile(model)
 
-    for data in tqdm(dataset['train']):
+    if args.batch_size > 1:
+        batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer)
+    else:
+        normal_generate(args, dataset, device, generation_config, model, prompter, tokenizer)
+
+
+def normal_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
+    for i, data in tqdm(enumerate(dataset['train'])):
+        if i < args.start_from:
+            continue
         instruction = data['instruction']
         input = data['input']
         prompt = prompter.generate_prompt(instruction, input)
@@ -161,12 +196,15 @@ if __name__ == "__main__":
     parser.add_argument("--lora_weights", type=str, default="tloen/alpaca-lora-7b")
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
-    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--max_new_tokens", type=int, default=128)
     parser.add_argument("--fp16", type=bool, default=True)
     parser.add_argument("--bf16", type=bool, default=False)
     parser.add_argument("--double_quant", type=bool, default=True)
     parser.add_argument("--quant_type", type=str, default="nf4")  # either fp4 or nf4
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
+    parser.add_argument("--num_beams", type=int, default=4)
+    parser.add_argument("--start_from", type=int, default=0)
+    parser.add_argument("--batch_size", type=int, default=1)
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
