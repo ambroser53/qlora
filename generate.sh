@@ -1,0 +1,13 @@
+python qlora.py \
+     --model_name_or_path  elinas/llama-13b-hf-transformers-4.29
+     --output_dir ./eval-output
+     --dataset data/instruct_cochrane_eval_v2.json
+     --custom_eval_dir data/instruct_cochrane_eval_v2.json
+     --do_predict True
+     --source_max_len 384
+     --target_max_len 1024
+     --logging_steps 10
+     --save_strategy steps
+     --optim paged_adamw_32bit
+     --do_train False
+     --test_last_checkpoint True
