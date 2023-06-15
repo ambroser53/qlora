@@ -150,7 +150,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
-        args.output_file = args.model_name_or_path + ".jsonl"
+        args.output_file = args.model_name_or_path + "guanaco65B_eval.jsonl"
 
     if args.dataset is None:
         main_one(args)

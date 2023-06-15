@@ -126,7 +126,7 @@ if __name__ == "__main__":
         threeclass_suff = "_threeclass" if 'threeclass' in args.prompt_file else ""
         dest = os.path.join(
             args.output_review_file,
-            '_vs_'.join([elt.split('/')[-1].replace('.jsonl', '') for elt in args.answer_file_list]) + f'_{args.model}_reviewer{threeclass_suff}' + '.jsonl'
+            '_vs_'.join([elt.split('/')[-1].replace('guanaco65B_eval.jsonl', '') for elt in args.answer_file_list]) + f'_{args.model}_reviewer{threeclass_suff}' + 'guanaco65B_eval.jsonl'
         )
 
     ray.init()

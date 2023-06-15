@@ -11,6 +11,9 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 
 
+DEFAULT_PAD_TOKEN = "[PAD]"
+
+
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
     dataset['train'].map(lambda x: {"data": x, "prompt":prompter.generate_prompt(x['instruction'], x['input'])})
     batch_iter = DataLoader(dataset['train'], batch_size=args.batch_size, shuffle=False, num_workers=4)
@@ -84,6 +87,13 @@ def main(args):
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
 
+    if tokenizer._pad_token is None:
+        smart_tokenizer_and_embedding_resize(
+            special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
+            tokenizer=tokenizer,
+            model=model,
+        )
+
     if not args.bits == 4 and not args.bits == 8:
         model.half()
 
@@ -99,7 +109,7 @@ def main(args):
 
 
 def normal_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    for i, data in tqdm(enumerate(dataset['train'])):
+    for i, data in enumerate(tqdm(dataset['train'])):
         if i < args.start_from:
             continue
         instruction = data['instruction']
@@ -118,6 +128,25 @@ def normal_generate(args, dataset, device, generation_config, model, prompter, t
                 "response": tokenizer.decode(output_ids[0], skip_special_tokens=True),
                 "label": data["output"]
             }) + '\n')
+
+
+def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
+    """Resize tokenizer and embedding.
+
+    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
+    """
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 
 def main_one(args):
@@ -208,7 +237,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
-        args.output_file = args.lora_weights + ".jsonl"
+        args.output_file = args.lora_weights + "_eval.jsonl"
 
     if args.dataset is None:
         main_one(args)
