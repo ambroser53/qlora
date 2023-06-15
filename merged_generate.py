@@ -140,13 +140,12 @@ if __name__ == "__main__":
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=64)
-    parser.add_argument("--num_beams", type=int, default=1)
+    parser.add_argument("--num_beams", type=int, default=4)
     parser.add_argument("--fp16", type=bool, default=True)
     parser.add_argument("--bf16", type=bool, default=False)
     parser.add_argument("--double_quant", type=bool, default=True)
     parser.add_argument("--quant_type", type=str, default="nf4")  # either fp4 or nf4
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
-    parser.add_argument("--num_beams", type=int, default=4)
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
