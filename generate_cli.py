@@ -197,6 +197,13 @@ def main_one(args):
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
 
+    if tokenizer._pad_token is None:
+        smart_tokenizer_and_embedding_resize(
+            special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
+            tokenizer=tokenizer,
+            model=model,
+        )
+
     if not args.bits == 4 and not args.bits == 8:
         model.half()
 
