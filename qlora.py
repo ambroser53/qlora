@@ -32,7 +32,7 @@ import evaluate
 import nltk
 
 from peft import (
-    prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
     LoraConfig,
     get_peft_model,
     get_peft_model_state_dict,
@@ -357,7 +357,7 @@ def get_accelerate_model(args, checkpoint_dir):
     model.config.torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
 
     if not args.full_finetune:
-        model = prepare_model_for_int8_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
@@ -452,13 +452,14 @@ class DataCollatorForCausalLM(object):
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         # Extract elements
-        sources = [example['input'] for example in instances]
+        sources = [f"{self.tokenizer.bos_token}{example['input']}" for example in instances]
         targets = [f"{example['output']}{self.tokenizer.eos_token}" for example in instances]
         # Tokenize
         tokenized_sources_with_prompt = self.tokenizer(
             sources,
             max_length=self.source_max_len,
             truncation=True,
+            add_special_tokens=False,
         )
         tokenized_targets = self.tokenizer(
             targets,
@@ -710,7 +711,8 @@ def train():
         args.model_name_or_path,
         cache_dir=args.cache_dir,
         padding_side="right",
-        use_fast=True,
+        use_fast=False,
+        tokenizer_type='llama' if 'llama' in args.model_name_or_path else None,  # Needed for HF name change
     )
     if tokenizer._pad_token is None:
         smart_tokenizer_and_embedding_resize(
@@ -723,14 +725,15 @@ def train():
         # Check and add them if missing to prevent them from being parsed into different tokens.
         # Note that these are present in the vocabulary.
         # Note also that `model.config.pad_token_id` is 0 which corresponds to `<unk>` token.
-        if tokenizer.eos_token_id != model.config.eos_token_id or tokenizer.pad_token_id != model.config.pad_token_id or tokenizer.unk_token_id != model.config.unk_token_id:
-            tokenizer.add_special_tokens(
-                {
-                    "eos_token": tokenizer.convert_ids_to_tokens(model.config.eos_token_id),
-                    "bos_token": tokenizer.convert_ids_to_tokens(model.config.bos_token_id),
-                    "unk_token": tokenizer.convert_ids_to_tokens(model.config.pad_token_id),
-                }
-            )
+        tokenizer.add_special_tokens(
+            {
+                "eos_token": tokenizer.convert_ids_to_tokens(model.config.eos_token_id),
+                "bos_token": tokenizer.convert_ids_to_tokens(model.config.bos_token_id),
+                "unk_token": tokenizer.convert_ids_to_tokens(
+                    model.config.pad_token_id if model.config.pad_token_id != -1 else tokenizer.pad_token_id
+                ),
+            }
+        )
 
     if args.merge_and_unload:
         model = model.merge_and_unload()
