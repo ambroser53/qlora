@@ -13,6 +13,7 @@ import numpy as np
 from tqdm import tqdm
 import logging
 import bitsandbytes as bnb
+from peft_friendly_S2S_Trainer import PEFTFriendlySeq2SeqTrainer
 
 import torch
 import transformers
@@ -119,10 +120,10 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
         default="auto",
         metadata={"help": "Which cuda device to use. Sets to 'auto' by default to allow accelerate to figure it out."}
     )
-    without_trainer_checkpoint: Optional[bool] = field(
+    with_trainer_checkpoint: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a trainer checkpoint with the checkpoint_dir or just QLoRA weights from "
-                          "adapter_model subdirectory."}
+                          "adapter_model subdirectory. Forces loading of trainer checkpoint where it is usually avoided."}
     )
     force_lora_training: Optional[bool] = field(
         default=False,
@@ -689,6 +690,7 @@ def train():
             resume_from_checkpoint = (
                 False  # So the trainer won't try loading its state
             )
+            print("resume_from_checkpoint is False")
         # The two files above have a different name depending on how they were saved, but are actually the same.
         if os.path.exists(checkpoint_name):
             print(f"Restarting from {checkpoint_name}")
@@ -742,12 +744,21 @@ def train():
 
     data_module = make_data_module(tokenizer=tokenizer, args=args)
 
-    trainer = Seq2SeqTrainer(
-        model=model, 
-        tokenizer=tokenizer,
-        args=training_args,
-        **{k:v for k,v in data_module.items() if k != 'predict_dataset'},
-    )
+    if args.with_trainer_checkpoint:
+        resume_from_checkpoint = True
+        trainer = PEFTFriendlySeq2SeqTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,
+            **{k:v for k,v in data_module.items() if k != 'predict_dataset'},
+        )
+    else:
+        trainer = Seq2SeqTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,
+            **{k: v for k, v in data_module.items() if k != 'predict_dataset'},
+        )
 
     # Callbacks
     if not args.full_finetune:
@@ -831,8 +842,6 @@ def train():
     all_metrics = {"run_name": args.run_name}
     # Training
     if args.do_train:
-        if args.without_trainer_checkpoint:
-            checkpoint_dir = None
         train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         metrics = train_result.metrics
         trainer.log_metrics("train", metrics)
