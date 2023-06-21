@@ -34,7 +34,7 @@ def main(args):
     
     label_to_idx = {'Included': 1, 'Excluded': 0}
 
-    folds = 5
+    folds = args.num_folds
     kf = KFold(n_splits=folds, shuffle=True, random_state=0)
     y_hat = []
     labels = []
