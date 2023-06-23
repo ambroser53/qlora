@@ -3,8 +3,7 @@ import json
 import sys
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, GenerationConfig, LlamaTokenizer, BitsAndBytesConfig, AutoTokenizer
-from accelerate import infer_auto_device_map
+from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
 from datasets import load_dataset
@@ -13,6 +12,9 @@ from transformers import DataCollatorForSeq2Seq
 import re
 
 
+DEFAULT_BOS_TOKEN = '<s>'
+DEFAULT_EOS_TOKEN = '</s>'
+DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
 
 
@@ -101,6 +103,13 @@ def main(args):
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
+
+    if tokenizer.bos_token is None:
+        tokenizer.bos_token = DEFAULT_BOS_TOKEN
+    if tokenizer.eos_token is None:
+        tokenizer.eos_token = DEFAULT_EOS_TOKEN,
+    if tokenizer.unk_token is None:
+        tokenizer.unk_token = DEFAULT_UNK_TOKEN,
 
     if tokenizer._pad_token is None:
         smart_tokenizer_and_embedding_resize(

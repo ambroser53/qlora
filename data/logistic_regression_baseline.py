@@ -1,11 +1,9 @@
 import argparse
-import os
 import pandas as pd
 from glob import glob
 from sklearn.model_selection import KFold
-from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
-import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 import nltk
 import warnings
@@ -34,8 +32,7 @@ def main(args):
     
     label_to_idx = {'Included': 1, 'Excluded': 0}
 
-    folds = args.num_folds
-    kf = KFold(n_splits=folds, shuffle=True, random_state=0)
+    kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
     y_hat = []
     labels = []
 
