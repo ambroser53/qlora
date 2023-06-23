@@ -49,6 +49,9 @@ torch.backends.cuda.matmul.allow_tf32 = True
 logger = logging.getLogger(__name__)
 
 IGNORE_INDEX = -100
+DEFAULT_BOS_TOKEN = '<s>'
+DEFAULT_EOS_TOKEN = '</s>'
+DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
 
 @dataclass
@@ -716,6 +719,14 @@ def train():
         use_fast=False,
         tokenizer_type='llama' if 'llama' in args.model_name_or_path else None,  # Needed for HF name change
     )
+    
+    if tokenizer.bos_token is None:
+        tokenizer.bos_token = DEFAULT_BOS_TOKEN
+    if tokenizer.eos_token is None:
+        tokenizer.eos_token = DEFAULT_EOS_TOKEN,
+    if tokenizer.unk_token is None:
+        tokenizer.unk_token = DEFAULT_UNK_TOKEN,
+    
     if tokenizer._pad_token is None:
         smart_tokenizer_and_embedding_resize(
             special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
