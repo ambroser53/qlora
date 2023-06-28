@@ -48,7 +48,7 @@ def main(args):
         return_dict=True,
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
-        torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)),
+        torch_dtype=compute_dtype,
         device_map='auto',
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=args.bits == 4,
