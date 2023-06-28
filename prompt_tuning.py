@@ -49,7 +49,7 @@ def main(args):
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
         torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)),
-        device_map='cpu',
+        device_map={'': 0},
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=args.bits == 4,
             load_in_8bit=args.bits == 8,
