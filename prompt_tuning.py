@@ -4,7 +4,7 @@ from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import PeftConfig, PeftModel
+from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model
 import torch
 from torch.utils.data import DataLoader
 import sys
@@ -42,16 +42,14 @@ def main(args):
     if len(reviews) == 0:
         raise ValueError(f'No reviews found in {args.data_dir}')
 
-    peft_config = PeftConfig.from_pretrained(args.lora_weights)
-
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
-    base_model = AutoModelForCausalLM.from_pretrained(
-        peft_config.base_model_name_or_path,
+    model = AutoModelForCausalLM.from_pretrained(
+        args.base_model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
         torch_dtype=(torch.float32 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32)),
-        device_map={'': 0},
+        device_map='cpu',
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=args.bits == 4,
             load_in_8bit=args.bits == 8,
@@ -62,9 +60,8 @@ def main(args):
             bnb_4bit_quant_type=args.quant_type
         ),
     )
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model_name_or_path)
 
-    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
-    model = PeftModel.from_pretrained(base_model, args.lora_weights)
 
     if tokenizer.bos_token is None:
         tokenizer.bos_token = DEFAULT_BOS_TOKEN
@@ -86,6 +83,15 @@ def main(args):
     if torch.__version__ >= "2" and sys.platform != "win32":
         model = torch.compile(model)
 
+    # Prompt tuning bits
+    prompt_config = PromptTuningConfig(
+        task_type=TaskType.CAUSAL_LM,
+        prompt_tuning_init=PromptTuningInit.TEXT,
+        num_virtual_tokens=20,
+        prompt_tuning_init_text="Classify the study with this abstract into included or excluded for my "
+                                "systematic review given it's objectives and selection criteria:"
+    )
+
     kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
     y_pred = []
     y_true = []
@@ -103,6 +109,10 @@ def main(args):
         review_y_true = []
 
         for train_index, test_index in kf.split(dataset_dict['train_dataset']):
+            model = get_peft_model(model, prompt_config)
+            print("New soft prompts:")
+            print(model.print_trainable_parameters())
+
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=8, shuffle=True)
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=8, shuffle=True)
 
@@ -131,6 +141,8 @@ def main(args):
                 review_y_pred.extend([output.split()[0] for output in decoded_outputs])
                 review_y_true.extend([label.split()[0] for label in decoded_labels])
 
+            ## swap out the prompt
+
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
 
@@ -144,9 +156,25 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--lora_weights', type=str, required=True, help='Path to lora adapter weights')
+    parser.add_argument('--model_name_or_path', type=str, required=True, help='Path to lora adapter weights merged into model or model path')
     parser.add_argument('--data_dir', type=str, required=True, help='Path to directory containing reviews')
     parser.add_argument('--num_folds', default=5, type=int, help='Number of folds for cross validation')
     parser.add_argument("--prompt_template", type=str, default="alpaca")
+    parser.add_argument("--fp16", type=bool, default=False)
+    parser.add_argument("--bf16", type=bool, default=False)
+    parser.add_argument("--bits", type=int, default=4)
+    parser.add_argument("--double_quant", type=bool, default=True)
+    parser.add_argument("--quant_type", type=str, default="nf4")
+    parser.add_argument("--custom_eval_dir", type=bool, default=False)
+    parser.add_argument("--load_from_disk", type=bool, default=False)
+    parser.add_argument("--source_max_len", type=int, default=1024)
+    parser.add_argument("--target_max_len", type=int, default=384)
     args = parser.parse_args()
+    args.do_predict = False
+    args.do_eval = False
+    args.do_train = True
+    args.predict_with_generate = False
+    args.train_on_source = False
+    args.max_train_samples = None
+    args.group_by_length = True
     main(args)
