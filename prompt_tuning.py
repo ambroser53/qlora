@@ -165,12 +165,11 @@ def main(args):
                 )
 
                 decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-                decoded_labels = tokenizer.batch_decode([l for l in labels if l != -100], skip_special_tokens=True)
+                decoded_labels = tokenizer.batch_decode([[t for t in l if t != 100] for l in labels], skip_special_tokens=True)
                 review_y_pred.extend([output.split()[0] for output in decoded_outputs])
                 review_y_true.extend([label.split()[0] for label in decoded_labels])
 
             ## swap out the prompt
-            print()
 
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
