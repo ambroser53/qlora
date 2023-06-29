@@ -63,6 +63,15 @@ def main(args):
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        else:
+            def make_inputs_require_grad(module, input, output):
+                output.requires_grad_(True)
+            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if tokenizer.bos_token is None:
         tokenizer.bos_token = DEFAULT_BOS_TOKEN
@@ -173,6 +182,7 @@ if __name__ == '__main__':
     parser.add_argument("--load_from_disk", type=bool, default=False)
     parser.add_argument("--source_max_len", type=int, default=1024)
     parser.add_argument("--target_max_len", type=int, default=384)
+    parser.add_argument("--gradient_checkpointing", type=bool, default=True)
     args = parser.parse_args()
     args.do_predict = False
     args.do_eval = False
