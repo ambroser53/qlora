@@ -39,6 +39,9 @@ def process_text(text):
 
 
 def main(args):
+    torch._dynamo.config.verbose = True
+
+
     reviews = glob(f'{args.data_dir}/*.json')
     if len(reviews) == 0:
         raise ValueError(f'No reviews found in {args.data_dir}')
@@ -66,14 +69,14 @@ def main(args):
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
-        if hasattr(model, "enable_input_require_grads"):
-            print("Enabling input require grads")
-            model.enable_input_require_grads()
-        else:
-            print("Enabling input require grads via forward hook")
-            def make_inputs_require_grad(module, input, output):
-                output.requires_grad_(True)
-            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+        # if hasattr(model, "enable_input_require_grads"):
+        #     print("Enabling input require grads")
+        #     model.enable_input_require_grads()
+        # else:
+        #     print("Enabling input require grads via forward hook")
+        #     def make_inputs_require_grad(module, input, output):
+        #         output.requires_grad_(True)
+        #     model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if tokenizer.bos_token is None:
         tokenizer.bos_token = DEFAULT_BOS_TOKEN
