@@ -154,6 +154,8 @@ def main(args):
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
+                print(labels)
+
             model.eval()
             for batch in test_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
