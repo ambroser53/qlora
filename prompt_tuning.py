@@ -37,6 +37,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 def process_text(text):
     pass
 
+
 def main(args):
     reviews = glob(f'{args.data_dir}/*.json')
     if len(reviews) == 0:
@@ -49,7 +50,7 @@ def main(args):
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
         torch_dtype=compute_dtype,
-        device_map='auto',
+        device_map={'': 0},
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=args.bits == 4,
             load_in_8bit=args.bits == 8,
@@ -89,7 +90,9 @@ def main(args):
         prompt_tuning_init=PromptTuningInit.TEXT,
         num_virtual_tokens=20,
         prompt_tuning_init_text="Classify the study with this abstract into included or excluded for my "
-                                "systematic review given it's objectives and selection criteria:"
+                                "systematic review given it's objectives and selection criteria:",
+        tokenizer_name_or_path=args.model_name_or_path,
+        base_model_name_or_path=args.model_name_or_path,
     )
 
     kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
@@ -113,8 +116,8 @@ def main(args):
             print("New soft prompts:")
             print(model.print_trainable_parameters())
 
-            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=8, shuffle=True)
-            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=8, shuffle=True)
+            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=8, shuffle=True, collate_fn=dataset_dict['data_collator'])
+            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=8, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
             model.train()
             for batch in train_loader:
