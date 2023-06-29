@@ -67,8 +67,10 @@ def main(args):
         model.gradient_checkpointing_enable()
 
         if hasattr(model, "enable_input_require_grads"):
+            print("Enabling input require grads")
             model.enable_input_require_grads()
         else:
+            print("Enabling input require grads via forward hook")
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
