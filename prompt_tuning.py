@@ -155,15 +155,15 @@ def main(args):
             for batch in test_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
                 print("input_ids: "+str(input_ids))
-                print("attention mask: "+attention_mask)
-                print("labels: "+labels)
+                print("attention mask: "+str(attention_mask))
+                print("labels: "+str(labels))
 
                 outputs = model.generate(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     max_new_tokens=args.target_max_len,
                 )
-                print(outputs)
+                print(str(outputs))
 
                 decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
                 decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
