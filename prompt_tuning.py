@@ -143,7 +143,7 @@ def main(args):
             model.train()
             for batch in train_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
-                if any([all(x == -100) for x in labels]):
+                if any([all([y == -100 for y in x]) for x in labels]):
                     print("Skipping batch with all -100 labels")
                     continue
 
@@ -154,14 +154,9 @@ def main(args):
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-                print(labels)
-
             model.eval()
             for batch in test_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
-                print("input_ids: "+str(input_ids))
-                print("attention mask: "+str(attention_mask))
-                print("labels: "+str(labels))
 
                 outputs = model.generate(
                     input_ids=input_ids,
@@ -170,7 +165,7 @@ def main(args):
                 )
 
                 decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-                decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+                decoded_labels = tokenizer.batch_decode([l for l in labels if l != -100], skip_special_tokens=True)
                 review_y_pred.extend([output.split()[0] for output in decoded_outputs])
                 review_y_true.extend([label.split()[0] for label in decoded_labels])
 
