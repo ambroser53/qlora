@@ -4,7 +4,7 @@ from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model
+from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training
 import torch
 from torch.utils.data import DataLoader
 import sys
@@ -62,7 +62,7 @@ def main(args):
         ),
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
 
     if tokenizer.bos_token is None:
         tokenizer.bos_token = DEFAULT_BOS_TOKEN
@@ -145,6 +145,7 @@ def main(args):
                 review_y_true.extend([label.split()[0] for label in decoded_labels])
 
             ## swap out the prompt
+            print()
 
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
