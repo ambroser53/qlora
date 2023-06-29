@@ -667,7 +667,6 @@ def train():
     args = argparse.Namespace(
         **vars(model_args), **vars(data_args), **vars(training_args)
     )
-    
 
     checkpoint_dir, completed_training = get_last_checkpoint(args.output_dir, args.test_last_checkpoint)
     if completed_training:

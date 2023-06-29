@@ -3,12 +3,14 @@ import pandas as pd
 from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup
 from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training
 import torch
 from torch.utils.data import DataLoader
+from torch.optim import AdamW
 import sys
 from qlora import make_data_module
+import tqdm
 
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
@@ -116,7 +118,7 @@ def main(args):
     args.do_predict = False
     args.do_eval = False
     
-    for review in reviews:
+    for review in tqdm(reviews):
         args.dataset = review
         dataset_dict = make_data_module(tokenizer, args)
 
@@ -131,6 +133,13 @@ def main(args):
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=8, shuffle=True, collate_fn=dataset_dict['data_collator'])
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=8, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
+            optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+            lr_scheduler = get_linear_schedule_with_warmup(
+                optimizer=optimizer,
+                num_warmup_steps=0,
+                num_training_steps=(len(train_loader)),
+            )
+
             model.train()
             for batch in train_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
@@ -138,9 +147,9 @@ def main(args):
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss
                 loss.backward()
-                model.optimizer.step()
-                model.scheduler.step()
-                model.zero_grad()
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
 
             model.eval()
             for batch in test_loader:
@@ -185,7 +194,8 @@ if __name__ == '__main__':
     parser.add_argument("--load_from_disk", type=bool, default=False)
     parser.add_argument("--source_max_len", type=int, default=1024)
     parser.add_argument("--target_max_len", type=int, default=384)
-    parser.add_argument("--gradient_checkpointing", type=bool, default=True)
+    parser.add_argument("--gradient_checkpointing", type=bool, default=True)#
+    parser.add_argument("--lr", type=float, default=0.0002)
     args = parser.parse_args()
     args.do_predict = False
     args.do_eval = False
