@@ -143,7 +143,7 @@ def main(args):
             model.train()
             for batch in train_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
-                if all([x == -100 for x in labels]):
+                if any([all(x == -100) for x in labels]):
                     print("Skipping batch with all -100 labels")
                     continue
 
