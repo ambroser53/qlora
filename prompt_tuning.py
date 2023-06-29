@@ -104,6 +104,7 @@ def main(args):
                                 "systematic review given it's objectives and selection criteria:",
         tokenizer_name_or_path=args.model_name_or_path,
         base_model_name_or_path=args.model_name_or_path,
+        tokenizer=tokenizer,
     )
 
     kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
