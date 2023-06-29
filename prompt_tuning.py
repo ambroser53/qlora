@@ -63,17 +63,17 @@ def main(args):
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
-    if args.gradient_checkpointing:
-        model.gradient_checkpointing_enable()
-
-        # if hasattr(model, "enable_input_require_grads"):
-        #     print("Enabling input require grads")
-        #     model.enable_input_require_grads()
-        # else:
-        #     print("Enabling input require grads via forward hook")
-        #     def make_inputs_require_grad(module, input, output):
-        #         output.requires_grad_(True)
-        #     model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+    # if args.gradient_checkpointing:
+    #     model.gradient_checkpointing_enable()
+    #
+    #     if hasattr(model, "enable_input_require_grads"):
+    #         print("Enabling input require grads")
+    #         model.enable_input_require_grads()
+    #     else:
+    #         print("Enabling input require grads via forward hook")
+    #         def make_inputs_require_grad(module, input, output):
+    #             output.requires_grad_(True)
+    #         model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if tokenizer.bos_token is None:
         tokenizer.bos_token = DEFAULT_BOS_TOKEN
