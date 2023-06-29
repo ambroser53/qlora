@@ -143,6 +143,9 @@ def main(args):
             model.train()
             for batch in train_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
+                if all([x == -100 for x in labels]):
+                    print("Skipping batch with all -100 labels")
+                    continue
 
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss
@@ -163,7 +166,6 @@ def main(args):
                     attention_mask=attention_mask,
                     max_new_tokens=args.target_max_len,
                 )
-                print(str(outputs))
 
                 decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
                 decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
