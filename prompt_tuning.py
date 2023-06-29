@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 import sys
 from qlora import make_data_module
-import tqdm
+from tqdm import tqdm
 
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
