@@ -130,8 +130,8 @@ def main(args):
             print("New soft prompts:")
             print(model.print_trainable_parameters())
 
-            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=8, shuffle=True, collate_fn=dataset_dict['data_collator'])
-            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=8, shuffle=True, collate_fn=dataset_dict['data_collator'])
+            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
+            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
             lr_scheduler = get_linear_schedule_with_warmup(
@@ -154,11 +154,16 @@ def main(args):
             model.eval()
             for batch in test_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
+                print("input_ids: "+str(input_ids))
+                print("attention mask: "+attention_mask)
+                print("labels: "+labels)
 
                 outputs = model.generate(
                     input_ids=input_ids,
-                    attention_mask=attention_mask
+                    attention_mask=attention_mask,
+                    max_new_tokens=args.target_max_len,
                 )
+                print(outputs)
 
                 decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
                 decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
@@ -194,8 +199,9 @@ if __name__ == '__main__':
     parser.add_argument("--load_from_disk", type=bool, default=False)
     parser.add_argument("--source_max_len", type=int, default=1024)
     parser.add_argument("--target_max_len", type=int, default=384)
-    parser.add_argument("--gradient_checkpointing", type=bool, default=True)#
+    parser.add_argument("--gradient_checkpointing", type=bool, default=True)
     parser.add_argument("--lr", type=float, default=0.0002)
+    parser.add_argument("--batch_size", type=int, default=8)
     args = parser.parse_args()
     args.do_predict = False
     args.do_eval = False
