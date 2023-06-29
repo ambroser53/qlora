@@ -39,9 +39,6 @@ def process_text(text):
 
 
 def main(args):
-    torch._dynamo.config.verbose = True
-
-
     reviews = glob(f'{args.data_dir}/*.json')
     if len(reviews) == 0:
         raise ValueError(f'No reviews found in {args.data_dir}')
