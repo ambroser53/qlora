@@ -11,6 +11,7 @@ from torch.optim import AdamW
 import sys
 from qlora import make_data_module
 from tqdm import tqdm
+import numpy as np
 
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
@@ -162,9 +163,24 @@ def main(args):
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     max_new_tokens=args.target_max_len,
+                    return_dict_in_generate=True,
+                    output_scores=True,
                 )
 
-                decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                # compute probability of each generated token
+                transition_scores = model.compute_transition_scores(
+                    outputs.sequences, outputs.scores, normalize_logits=True
+                )
+
+                input_length = input_ids.shape[1]
+                generated_tokens = outputs.sequences[:, input_length:input_length+5]
+
+                for tok, score in zip(generated_tokens[0], transition_scores[0][:5]):
+                    # | token | token string | probability
+                    print(
+                        f"| {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
+
+                decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
                 decoded_labels = tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
                 review_y_pred.extend([output.split()[0] for output in decoded_outputs])
                 review_y_true.extend([label.split()[0] for label in decoded_labels])

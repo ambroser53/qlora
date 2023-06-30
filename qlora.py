@@ -457,6 +457,7 @@ class DataCollatorForCausalLM(object):
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         # Extract elements
         sources = [f"{self.tokenizer.bos_token}{example['input']}" for example in instances]
+        print(sources[0])
         targets = [f"{example['output']}{self.tokenizer.eos_token}" for example in instances]
         # Tokenize
         tokenized_sources_with_prompt = self.tokenizer(
@@ -497,6 +498,8 @@ class DataCollatorForCausalLM(object):
         }
         if labels is not None:
             data_dict['labels'] = labels
+
+        print(True if input_ids is None else "")
         return data_dict
 
 def extract_unnatural_instructions_data(examples, extract_reformulations=False):
