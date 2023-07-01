@@ -197,7 +197,7 @@ def main(args):
                         # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
                         # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
 
-                        output_length = inputs.input_ids.shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+                        output_length = input_ids.input_ids.shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
                         length_penalty = model.generation_config.length_penalty
                         reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
                         print(np.allclose(outputs.sequences_scores, reconstructed_scores))
