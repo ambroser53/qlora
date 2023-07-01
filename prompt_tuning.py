@@ -179,7 +179,7 @@ def main(args):
                 for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
                     # | token | token string | probability
                     print(
-                        f"| {i} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
+                        f"| {i} | {input_toks[i+2] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
                     i += 1
 
                 decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
