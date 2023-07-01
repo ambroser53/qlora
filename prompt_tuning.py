@@ -158,7 +158,7 @@ def main(args):
             model.eval()
             dataset_dict['data_collator'].eval(True)
             for batch in test_loader:
-                input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
+                input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels']
 
                 outputs = model.generate(
                     input_ids=input_ids,
