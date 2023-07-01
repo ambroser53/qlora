@@ -126,10 +126,6 @@ def main(args):
         review_y_true = []
 
         for train_index, test_index in kf.split(dataset_dict['train_dataset']):
-            #model = get_peft_model(model, prompt_config)
-            print("New soft prompts:")
-            #print(model.print_trainable_parameters())
-
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
@@ -140,20 +136,25 @@ def main(args):
                 num_training_steps=(len(train_loader)),
             )
 
-            # model.train()
-            # dataset_dict['data_collator'].eval(False)
-            # for batch in train_loader:
-            #     input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
-            #     if any([all([y == -100 for y in x]) for x in labels]):
-            #         print("Skipping batch with all -100 labels")
-            #         continue
-            #
-            #     outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            #     loss = outputs.loss
-            #     loss.backward()
-            #     optimizer.step()
-            #     lr_scheduler.step()
-            #     optimizer.zero_grad()
+            if args.do_train:
+                model = get_peft_model(model, prompt_config)
+                print("New soft prompts:")
+                print(model.print_trainable_parameters())
+
+                model.train()
+                dataset_dict['data_collator'].eval(False)
+                for batch in train_loader:
+                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
+                    if any([all([y == -100 for y in x]) for x in labels]):
+                        print("Skipping batch with all -100 labels")
+                        continue
+
+                    outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                    loss = outputs.loss
+                    loss.backward()
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
 
             model.eval()
             dataset_dict['data_collator'].eval(True)
@@ -166,6 +167,7 @@ def main(args):
                     max_new_tokens=args.target_max_len,
                     return_dict_in_generate=True,
                     output_scores=True,
+                    num_beams=args.num_beams,
                 )
 
                 # compute probability of each generated token
@@ -222,6 +224,8 @@ if __name__ == '__main__':
     parser.add_argument("--gradient_checkpointing", type=bool, default=True)
     parser.add_argument("--lr", type=float, default=0.0002)
     parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--do_train", action="store_true")
+    parser.add_argument("--num_beams", type=int, default=2)
     args = parser.parse_args()
     args.do_predict = False
     args.do_eval = False
