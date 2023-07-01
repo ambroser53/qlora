@@ -468,7 +468,7 @@ class DataCollatorForCausalLM(object):
             truncation=True,
             add_special_tokens=False,
         )
-        targets = torch.FloatTensor([0 if example['output'].split()[0] == 'Included' else 1 for example in instances]) ## force to only first token no eos
+        targets = torch.tensor([[0 if example['output'].split()[0] == 'Included' else 1] for example in instances]) ## force to only first token no eos
         # tokenized_targets = self.tokenizer(
         #     targets,
         #     max_length=self.target_max_len,
