@@ -129,17 +129,17 @@ def main(args):
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
-            optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-            lr_scheduler = get_linear_schedule_with_warmup(
-                optimizer=optimizer,
-                num_warmup_steps=0,
-                num_training_steps=(len(train_loader)),
-            )
-
             if args.do_train:
                 model = get_peft_model(model, prompt_config)
                 print("New soft prompts:")
                 print(model.print_trainable_parameters())
+
+                optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+                lr_scheduler = get_linear_schedule_with_warmup(
+                    optimizer=optimizer,
+                    num_warmup_steps=0,
+                    num_training_steps=(len(train_loader)),
+                )
 
                 model.train()
                 dataset_dict['data_collator'].eval(False)
@@ -156,42 +156,43 @@ def main(args):
                     lr_scheduler.step()
                     optimizer.zero_grad()
 
-            model.eval()
-            dataset_dict['data_collator'].eval(True)
-            for batch in test_loader:
-                input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels']
+            with torch.no_grad():
+                model.eval()
+                dataset_dict['data_collator'].eval(True)
+                for batch in test_loader:
+                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels']
 
-                outputs = model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    max_new_tokens=args.target_max_len,
-                    return_dict_in_generate=True,
-                    output_scores=True,
-                    num_beams=args.num_beams,
-                )
+                    outputs = model.generate(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        max_new_tokens=args.target_max_len,
+                        return_dict_in_generate=True,
+                        output_scores=True,
+                        num_beams=args.num_beams,
+                    )
 
-                # compute probability of each generated token
-                transition_scores = model.compute_transition_scores(
-                    outputs.sequences, outputs.scores, normalize_logits=True
-                )
+                    # compute probability of each generated token
+                    transition_scores = model.compute_transition_scores(
+                        outputs.sequences, outputs.scores, normalize_logits=True
+                    )
 
-                input_length = input_ids.shape[1]
-                input_toks = input_ids[:, input_length-2:]
-                generated_tokens = outputs.sequences[:, input_length-2:input_length+5]
-                i = -2
+                    input_length = input_ids.shape[1]
+                    input_toks = input_ids[:, input_length-2:]
+                    generated_tokens = outputs.sequences[:, input_length-2:input_length+5]
+                    i = -2
 
-                print(tokenizer.decode(input_ids[0]))
+                    print(tokenizer.decode(input_ids[0]))
 
-                for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
-                    # | token | token string | probability
-                    print(
-                        f"| {i} | {input_toks[i+2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
-                    i += 1
+                    for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
+                        # | token | token string | probability
+                        print(
+                            f"| {i} | {input_toks[i+2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
+                        i += 1
 
-                decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
-                decoded_labels = labels #tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
-                review_y_pred.extend([output.split()[0] for output in decoded_outputs])
-                review_y_true.extend([label.split()[0] for label in decoded_labels])
+                    decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
+                    decoded_labels = labels #tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
+                    review_y_pred.extend([output.split()[0] for output in decoded_outputs])
+                    review_y_true.extend([label.split()[0] for label in decoded_labels])
 
             ## swap out the prompt
 
