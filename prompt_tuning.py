@@ -128,7 +128,7 @@ def main(args):
         for train_index, test_index in kf.split(dataset_dict['train_dataset']):
             #model = get_peft_model(model, prompt_config)
             print("New soft prompts:")
-            print(model.print_trainable_parameters())
+            #print(model.print_trainable_parameters())
 
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
