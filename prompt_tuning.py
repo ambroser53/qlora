@@ -172,22 +172,35 @@ def main(args):
                     )
 
                     # compute probability of each generated token
-                    transition_scores = model.compute_transition_scores(
-                        outputs.sequences, outputs.scores, normalize_logits=True
-                    )
+                    if args.num_beams == 1:
+                        transition_scores = model.compute_transition_scores(
+                            outputs.sequences, outputs.scores, normalize_logits=True
+                        )
 
-                    input_length = input_ids.shape[1]
-                    input_toks = input_ids[:, input_length-2:]
-                    generated_tokens = outputs.sequences[:, input_length-2:input_length+5]
-                    i = -2
+                        input_length = input_ids.shape[1]
+                        input_toks = input_ids[:, input_length-2:]
+                        generated_tokens = outputs.sequences[:, input_length-2:input_length+5]
+                        i = -2
 
-                    print(tokenizer.decode(input_ids[0]))
+                        print(tokenizer.decode(input_ids[0]))
 
-                    for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
-                        # | token | token string | probability
-                        print(
-                            f"| {i} | {input_toks[i+2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
-                        i += 1
+                        for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
+                            # | token | token string | probability
+                            print(
+                                f"| {i} | {input_toks[i+2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
+                            i += 1
+                    else:
+                        transition_scores = model.compute_transition_scores(
+                            outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
+                        )
+
+                        # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
+                        # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
+
+                        output_length = inputs.input_ids.shape[1] + np.sum(transition_scores.numpy() < 0, axis=1)
+                        length_penalty = model.generation_config.length_penalty
+                        reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
+                        print(np.allclose(outputs.sequences_scores, reconstructed_scores))
 
                     decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
                     decoded_labels = labels #tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
