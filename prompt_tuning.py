@@ -187,7 +187,7 @@ def main(args):
                     i += 1
 
                 decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
-                decoded_labels = tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
+                decoded_labels = labels #tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
                 review_y_pred.extend([output.split()[0] for output in decoded_outputs])
                 review_y_true.extend([label.split()[0] for label in decoded_labels])
 

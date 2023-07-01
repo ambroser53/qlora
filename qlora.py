@@ -498,6 +498,8 @@ class DataCollatorForCausalLM(object):
         }
         if labels is not None:
             data_dict['labels'] = labels
+        else:
+            data_dict['labels'] = targets
 
         examine = [True if input_id is None else "" for input_id in data_dict['input_ids']]
         examine = examine if any([e != '' for e in examine]) else None
@@ -507,6 +509,7 @@ class DataCollatorForCausalLM(object):
 
     def eval(self, eval_mode: bool):
         self.predict_with_generate = eval_mode
+        self.eval_mode = eval_mode
 
 def extract_unnatural_instructions_data(examples, extract_reformulations=False):
     out = {
