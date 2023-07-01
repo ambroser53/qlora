@@ -192,14 +192,14 @@ def main(args):
                     else:
                         transition_scores = model.compute_transition_scores(
                             outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
-                        )
+                        ).cpu()
 
                         # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
                         # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
 
                         output_length = input_ids.shape[1] + np.sum(transition_scores.cpu().numpy() < 0, axis=1)
                         length_penalty = model.generation_config.length_penalty
-                        reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
+                        reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty.cpu())
                         print(np.allclose(outputs.sequences_scores, reconstructed_scores))
 
                     decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
