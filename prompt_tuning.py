@@ -191,7 +191,7 @@ def main(args):
                         output_length = input_ids.shape[1] + np.sum(transition_scores.cpu().numpy() < 0, axis=1)
                         length_penalty = model.generation_config.length_penalty
                         reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
-                        print(np.allclose(outputs.sequences_scores, reconstructed_scores))
+                        print(np.allclose(outputs.sequences_scores.cpu(), reconstructed_scores))
                         transition_scores = reconstructed_scores
 
                     input_length = input_ids.shape[1]
