@@ -140,19 +140,19 @@ def main(args):
                 num_training_steps=(len(train_loader)),
             )
 
-            model.train()
-            for batch in train_loader:
-                input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
-                if any([all([y == -100 for y in x]) for x in labels]):
-                    print("Skipping batch with all -100 labels")
-                    continue
-
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                loss = outputs.loss
-                loss.backward()
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
+            # model.train()
+            # for batch in train_loader:
+            #     input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
+            #     if any([all([y == -100 for y in x]) for x in labels]):
+            #         print("Skipping batch with all -100 labels")
+            #         continue
+            #
+            #     outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            #     loss = outputs.loss
+            #     loss.backward()
+            #     optimizer.step()
+            #     lr_scheduler.step()
+            #     optimizer.zero_grad()
 
             model.eval()
             for batch in test_loader:
