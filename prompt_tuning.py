@@ -102,9 +102,8 @@ def main(args):
     prompt_config = PromptTuningConfig(
         task_type=TaskType.CAUSAL_LM,
         prompt_tuning_init=PromptTuningInit.TEXT,
-        num_virtual_tokens=20,
-        prompt_tuning_init_text="Classify the study with this abstract into included or excluded for my "
-                                "systematic review given it's objectives and selection criteria:",
+        num_virtual_tokens=19,
+        prompt_tuning_init_text="Below is an instruction that describes a task, paired with an input that provides further context.",
         tokenizer_name_or_path=args.model_name_or_path,
         base_model_name_or_path=args.model_name_or_path,
         tokenizer=tokenizer,
