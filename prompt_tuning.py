@@ -174,7 +174,7 @@ def main(args):
                 input_length = input_ids.shape[1]
                 generated_tokens = outputs.sequences[:, input_length-2:input_length+5]
 
-                for tok, score in zip(generated_tokens[0], transition_scores[0][:5]):
+                for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
                     # | token | token string | probability
                     print(
                         f"| {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
