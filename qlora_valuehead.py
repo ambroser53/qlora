@@ -461,7 +461,6 @@ class DataCollatorForCausalLM(object):
         assert instances[0] is not None
         # Extract elements
         sources = [f"{self.tokenizer.bos_token}{example['input']}" for example in instances]
-        targets = [0 if example['output'].split()[0] == 'Included' else 1 for example in instances] ## force to only first token no eos
         # Tokenize
         tokenized_sources_with_prompt = self.tokenizer(
             sources,
@@ -469,6 +468,7 @@ class DataCollatorForCausalLM(object):
             truncation=True,
             add_special_tokens=False,
         )
+        targets = torch.FloatTensor([0 if example['output'].split()[0] == 'Included' else 1 for example in instances]) ## force to only first token no eos
         # tokenized_targets = self.tokenizer(
         #     targets,
         #     max_length=self.target_max_len,
