@@ -505,6 +505,9 @@ class DataCollatorForCausalLM(object):
             print(examine)
         return data_dict
 
+    def eval(self, eval_mode: bool):
+        self.predict_with_generate = eval_mode
+
 def extract_unnatural_instructions_data(examples, extract_reformulations=False):
     out = {
         'input': [],

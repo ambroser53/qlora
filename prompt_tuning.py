@@ -141,6 +141,7 @@ def main(args):
             )
 
             # model.train()
+            # dataset_dict['data_collator'].eval(False)
             # for batch in train_loader:
             #     input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
             #     if any([all([y == -100 for y in x]) for x in labels]):
@@ -155,6 +156,7 @@ def main(args):
             #     optimizer.zero_grad()
 
             model.eval()
+            dataset_dict['data_collator'].eval(True)
             for batch in test_loader:
                 input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
 
@@ -175,6 +177,8 @@ def main(args):
                 input_toks = input_ids[:, input_length-2:]
                 generated_tokens = outputs.sequences[:, input_length-2:input_length+5]
                 i = -2
+
+                print(tokenizer.decode(input_ids[0]))
 
                 for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
                     # | token | token string | probability
