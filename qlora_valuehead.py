@@ -494,7 +494,7 @@ class DataCollatorForCausalLM(object):
                 input_ids.append(torch.tensor(tokenized_source))
         # Apply padding
         input_ids = pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
-        labels = pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX) if not self.predict_with_generate else None
+        # labels = pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX) if not self.predict_with_generate else None
         data_dict = {
             'input_ids': input_ids,
             'attention_mask': input_ids.ne(self.tokenizer.pad_token_id),
