@@ -129,10 +129,13 @@ def main(args):
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
+
             if args.do_train:
+                print("pre-peft cuda usage: " + str(torch.cuda.mem_get_info()))
                 model = get_peft_model(model, prompt_config)
                 print("New soft prompts:")
                 print(model.print_trainable_parameters())
+                print("pre-train cuda usage: " + str(torch.cuda.mem_get_info()))
 
                 optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
                 lr_scheduler = get_linear_schedule_with_warmup(
@@ -156,6 +159,7 @@ def main(args):
                     lr_scheduler.step()
                     optimizer.zero_grad()
 
+            print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
             with torch.no_grad():
                 model.eval()
                 dataset_dict['data_collator'].eval(True)
