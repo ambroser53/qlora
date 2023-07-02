@@ -200,6 +200,8 @@ def main(args):
                     i = -2
 
                     print(tokenizer.decode(input_ids[0]))
+                    generated_tokens[0]
+                    transition_scores[0][:7]
                     for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
                         # | token | token string | probability
                         print(
