@@ -126,8 +126,8 @@ def main(args):
         review_y_true = []
 
         for train_index, test_index in kf.split(dataset_dict['train_dataset']):
-            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
-            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
+            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.train_batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
+            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.eval_batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
 
             if args.do_train:
@@ -241,7 +241,8 @@ if __name__ == '__main__':
     parser.add_argument("--target_max_len", type=int, default=384)
     parser.add_argument("--gradient_checkpointing", type=bool, default=True)
     parser.add_argument("--lr", type=float, default=0.0002)
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--train_batch_size", type=int, default=8)
+    parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_beams", type=int, default=2)
     args = parser.parse_args()
