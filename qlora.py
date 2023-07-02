@@ -502,7 +502,7 @@ class DataCollatorForCausalLM(object):
             data_dict['labels'] = targets
 
         examine = [True if input_id is None else "" for input_id in data_dict['input_ids']]
-        examine = examine if any([e != '' for e in examine]) else None
+        examine = examine if any(examine) else None
         if examine:
             print(examine)
         return data_dict

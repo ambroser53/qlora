@@ -4,7 +4,7 @@ from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup
-from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training
+from peft import PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training, AdaptionPromptConfig
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -99,14 +99,11 @@ def main(args):
     #     model = torch.compile(model)
 
     # Prompt tuning bits
-    prompt_config = PromptTuningConfig(
+    prompt_config = AdaptionPromptConfig(
         task_type=TaskType.CAUSAL_LM,
-        prompt_tuning_init=PromptTuningInit.TEXT,
-        num_virtual_tokens=19,
-        prompt_tuning_init_text="Below is an instruction that describes a task, paired with an input that provides further context.",
-        tokenizer_name_or_path=args.model_name_or_path,
+        adapter_len=args.num_adapter_tokens,
         base_model_name_or_path=args.model_name_or_path,
-        tokenizer=tokenizer,
+        adapter_layers=args.num_adapter_layers
     )
 
     kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
@@ -117,7 +114,7 @@ def main(args):
 
     args.do_predict = False
     args.do_eval = False
-    
+
     for review in tqdm(reviews):
         args.dataset = review
         dataset_dict = make_data_module(tokenizer, args)
@@ -126,9 +123,11 @@ def main(args):
         review_y_true = []
 
         for train_index, test_index in kf.split(dataset_dict['train_dataset']):
-            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.train_batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
-            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.eval_batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
-
+            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index),
+                                      batch_size=args.train_batch_size, shuffle=True,
+                                      collate_fn=dataset_dict['data_collator'])
+            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.eval_batch_size,
+                                     shuffle=True, collate_fn=dataset_dict['data_collator'])
 
             if args.do_train:
                 print("pre-peft cuda usage: " + str(torch.cuda.mem_get_info()))
@@ -147,7 +146,8 @@ def main(args):
                 peft_model.train()
                 dataset_dict['data_collator'].eval(False)
                 for batch in train_loader:
-                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
+                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(
+                        device), batch['labels'].to(device)
                     if input_ids is None:
                         raise ValueError("input_ids is None")
 
@@ -161,12 +161,13 @@ def main(args):
             else:
                 model = base_model
 
-            print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
+            print("pre-eval cuda usage: " + str(torch.cuda.mem_get_info()))
             with torch.no_grad():
                 model.eval()
                 dataset_dict['data_collator'].eval(True)
                 for batch in test_loader:
-                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels']
+                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(
+                        device), batch['labels']
 
                     outputs = model.generate(
                         input_ids=input_ids,
@@ -209,7 +210,7 @@ def main(args):
                         i += 1
 
                     decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
-                    decoded_labels = labels #tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
+                    decoded_labels = labels  # tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
                     review_y_pred.extend([output.split()[0] for output in decoded_outputs])
                     review_y_true.extend([label.split()[0] for label in decoded_labels])
 
@@ -247,6 +248,8 @@ if __name__ == '__main__':
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_beams", type=int, default=2)
+    parser.add_argument("--num_adapter_tokens", type=int, default=10)
+    parser.add_argument("--num_adapter_layers", type=int, default=20)
     args = parser.parse_args()
     args.do_predict = False
     args.do_eval = False
