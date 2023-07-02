@@ -179,7 +179,7 @@ def main(args):
                     if args.num_beams == 1:
                         transition_scores = model.compute_transition_scores(
                             outputs.sequences, outputs.scores, normalize_logits=True
-                        )
+                        )[0]
                     else:
                         transition_scores = model.compute_transition_scores(
                             outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
@@ -200,9 +200,7 @@ def main(args):
                     i = -2
 
                     print(tokenizer.decode(input_ids[0]))
-                    generated_tokens[0]
-                    transition_scores[0][:7]
-                    for tok, score in zip(generated_tokens[0], transition_scores[0][:7]):
+                    for tok, score in zip(generated_tokens[0], transition_scores[:7]):
                         # | token | token string | probability
                         print(
                             f"| {i} | {input_toks[i + 2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
