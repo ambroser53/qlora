@@ -148,9 +148,8 @@ def main(args):
                 dataset_dict['data_collator'].eval(False)
                 for batch in train_loader:
                     input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device)
-                    if any([all([y == -100 for y in x]) for x in labels]):
-                        print("Skipping batch with all -100 labels")
-                        continue
+                    if input_ids is None:
+                        raise ValueError("input_ids is None")
 
                     outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                     loss = outputs.loss
