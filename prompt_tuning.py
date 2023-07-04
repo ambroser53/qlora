@@ -3,20 +3,45 @@ import pandas as pd
 from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup, PreTrainedTokenizer
 from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 import sys
-from qlora import make_data_module
 from tqdm import tqdm
 import numpy as np
+from dataclasses import dataclass, field
+from typing import Dict, Sequence
+from datasets import load_dataset, load_from_disk
 
+IGNORE_INDEX = -100
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
 DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
+
+
+PROMPT_DICT = {
+    "prompt_input": (
+        "Below is an instruction that describes a task, paired with an input that provides further context. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response: "
+    ),
+    "prompt_no_input": (
+        "Below is an instruction that describes a task. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Response: "
+    ),
+}
+
+def extract_alpaca_dataset(example):
+    if example.get("input", "") != "":
+        prompt_format = PROMPT_DICT["prompt_input"]
+    else:
+        prompt_format = PROMPT_DICT["prompt_no_input"]
+    return {'input': prompt_format.format(**example)}
+
 
 def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
     """Resize tokenizer and embedding.
@@ -37,8 +62,69 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 
-def process_text(text):
-    pass
+@dataclass
+class DataCollatorForCausalLM(object):
+    tokenizer: PreTrainedTokenizer
+    source_max_len: int
+    target_max_len: int
+    train_on_source: bool
+    predict_with_generate: bool
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        assert instances[0] is not None
+        # Extract elements
+        sources = [f"{self.tokenizer.bos_token}{example['input']}" for example in instances]
+        # Tokenize
+        input_ids = self.tokenizer(
+            sources,
+            max_length=self.source_max_len,
+            truncation=True,
+            add_special_tokens=False,
+            padding_side="left",
+            padding=True,
+            return_tensors="pt",
+        )
+        data_dict = {
+            'input_ids': input_ids,
+            'attention_mask': input_ids.ne(self.tokenizer.pad_token_id),
+        }
+
+        examine = [True if input_id is None else "" for input_id in data_dict['input_ids']]
+        examine = examine if any(examine) else None
+        if examine:
+            print(examine)
+        return data_dict
+
+    def eval(self, eval_mode: bool):
+        self.predict_with_generate = eval_mode
+
+
+def make_data_module(tokenizer, args):
+    # Load dataset.
+    if args.load_from_disk:
+        dataset = load_from_disk(args.dataset)
+    else:
+        dataset = load_dataset("json", data_files=args.dataset)
+    dataset = dataset.map(extract_alpaca_dataset, remove_columns=['instruction'])
+
+    if args.do_train:
+        train_dataset = dataset['train']
+        if args.max_train_samples is not None and len(train_dataset) > args.max_train_samples:
+            train_dataset = train_dataset.select(range(args.max_train_samples))
+        if args.group_by_length:
+            train_dataset = train_dataset.map(lambda x: {'length': len(x['input']) + len(x['output'])})
+
+    data_collator = DataCollatorForCausalLM(
+        tokenizer=tokenizer,
+        source_max_len=args.source_max_len,
+        target_max_len=args.target_max_len,
+        train_on_source=args.train_on_source,
+        predict_with_generate=args.predict_with_generate,
+    )
+    return dict(
+        train_dataset=train_dataset if args.do_train else None,
+        data_collator=data_collator
+    )
 
 
 def main(args):
