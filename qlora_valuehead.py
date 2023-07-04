@@ -409,6 +409,11 @@ def get_accelerate_model(args, checkpoint_dir):
             if hasattr(module, 'weight'):
                 if args.bf16 and module.weight.dtype == torch.float32:
                     module = module.to(torch.bfloat16)
+        if 'score' in name:
+            if hasattr(module, 'weight'):
+                if args.bf16 and module.weight.dtype == torch.float32:
+                    module = module.to(torch.bfloat16)
+                #module.requires_grad_(True)
     return model
 
 def print_trainable_parameters(args, model):
@@ -425,7 +430,7 @@ def print_trainable_parameters(args, model):
             print(name, param.sum())
         if 'score' in name:
             print("SCORE ################################")
-            print(name, param.weight.shape)
+            print(name, param.sum())
 
     if args.bits == 4: trainable_params /= 2
     print(f"trainable params: {trainable_params} || all params: {all_param} || trainable: {100 * trainable_params / all_param}")
