@@ -126,8 +126,8 @@ def main(args):
 
     model.eval()
 
-    if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
-        model = torch.compile(model)
+    # if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
+    #     model = torch.compile(model)
 
     batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer)
 
