@@ -423,6 +423,9 @@ def print_trainable_parameters(args, model):
         if param.requires_grad:
             trainable_params += param.numel()
             print(name, param.sum())
+        if 'score' in name:
+            print("SCORE ################################")
+            print(name, param.weight.shape)
 
     if args.bits == 4: trainable_params /= 2
     print(f"trainable params: {trainable_params} || all params: {all_param} || trainable: {100 * trainable_params / all_param}")
