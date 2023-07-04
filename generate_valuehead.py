@@ -59,6 +59,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
                 output = out_pattern.match(tokenizer.decode(input)).groupdict()
                 output['response'] = model.config.id2label[class_id]
                 f.write(json.dumps(output) + '\n')
+        del input_ids, attention_mask, logits, predicted_class_ids
         
 def main(args):
     dataset = load_dataset("json", data_files=args.dataset)
