@@ -292,6 +292,10 @@ class SavePeftModelCallback(transformers.TrainerCallback):
         if os.path.exists(pytorch_model_path):
             os.remove(pytorch_model_path)
 
+        print('Saving score weight at checkpoint...')
+        score_weight_path = os.path.join(checkpoint_folder, "score_weight.pt")
+        torch.save(kwargs["model"].model.score.state_dict(), score_weight_path)
+
     def on_save(self, args, state, control, **kwargs):
         self.save_model(args, state, kwargs)
         return control
@@ -350,6 +354,11 @@ def get_accelerate_model(args, checkpoint_dir):
         id2label={0: "Included", 1: "Excluded"},
         num_labels=2,
     )
+
+    # load score weight
+    if checkpoint_dir:
+        model.score.load_state_dict(torch.load(join(checkpoint_dir, 'score_weight.pt')))
+
     if compute_dtype == torch.float16 and args.bits == 4:
         major, minor = torch.cuda.get_device_capability()
         if major >= 8:
