@@ -3,7 +3,7 @@ import json
 import sys
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer
+from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer, LlamaTokenizer
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
 from datasets import load_dataset
@@ -98,7 +98,10 @@ def main(args):
         ),
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+    if args.llama_specifically:
+        tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
@@ -147,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_beams", type=int, default=4)
     parser.add_argument("--start_from", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--llama_specifically", action="store_true")
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
