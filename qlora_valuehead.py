@@ -386,7 +386,6 @@ def get_accelerate_model(args, checkpoint_dir):
                 if 'lora' in name:
                     if args.force_lora_training:
                         p.requires_grad_(True)
-                    print(name, p.sum())
         else:
             print(f'adding LoRA modules...')
             model = get_peft_model(model, config)
@@ -419,10 +418,11 @@ def print_trainable_parameters(args, model):
     trainable_params = 0
     all_param = 0
 
-    for _, param in model.named_parameters():
+    for name, param in model.named_parameters():
         all_param += param.numel()
         if param.requires_grad:
             trainable_params += param.numel()
+            print(name, param.sum())
 
     if args.bits == 4: trainable_params /= 2
     print(f"trainable params: {trainable_params} || all params: {all_param} || trainable: {100 * trainable_params / all_param}")

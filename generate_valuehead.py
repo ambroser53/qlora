@@ -52,12 +52,10 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
         logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
 
-        print(logits.shape)
-        predicted_class_id = [x.item() for x in logits.argmax(dim=-1)]
-        print(predicted_class_id)
+        predicted_class_ids = [x.item() for x in logits.argmax(dim=-1)]
         
         with open(args.output_file, "a+") as f:
-            for input, class_id in zip(input_ids, predicted_class_id):
+            for input, class_id in zip(input_ids, predicted_class_ids):
                 output = out_pattern.match(tokenizer.decode(input)).groupdict()
                 output['response'] = model.config.id2label[class_id]
                 f.write(json.dumps(output) + '\n')
