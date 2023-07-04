@@ -171,6 +171,7 @@ def main(args):
                 for batch in test_loader:
                     input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels']
 
+                    print(attention_mask)
                     outputs = model.generate(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
