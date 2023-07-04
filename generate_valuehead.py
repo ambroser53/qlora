@@ -52,7 +52,9 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
         logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
 
+        print(logits.shape)
         predicted_class_id = logits.argmax().item()
+        print(predicted_class_id.shape)
         print(predicted_class_id)
         
         with open(args.output_file, "a+") as f:
