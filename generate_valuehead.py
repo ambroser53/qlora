@@ -53,8 +53,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
 
         print(logits.shape)
-        predicted_class_id = logits.argmax(dim=-1).item()
-        print(predicted_class_id.shape)
+        predicted_class_id = [x.item() for x in logits.argmax(dim=-1)]
         print(predicted_class_id)
         
         with open(args.output_file, "a+") as f:
