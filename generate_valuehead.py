@@ -3,7 +3,7 @@ import json
 import sys
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, GenerationConfig, BitsAndBytesConfig, AutoTokenizer
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
 from datasets import load_dataset
@@ -38,7 +38,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    out_pattern = re.compile('.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))', re.DOTALL)
+    out_pattern = re.compile('.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:)', re.DOTALL)
 
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
@@ -53,13 +53,16 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
 
     for batch in tqdm(batch_iter, total=len(batch_iter)):
         input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
-        output_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=generation_config)
+        logits = model(input_ids=input_ids, attention_mask=attention_mask, generation_config=generation_config).logits
 
-        decoded_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+        predicted_class_id = logits.argmax().item()
+        print(predicted_class_id)
         
         with open(args.output_file, "a+") as f:
-            for output in decoded_outputs:
-                f.write(json.dumps(out_pattern.match(output).groupdict()) + '\n')
+            for input, class_id in zip(input_ids, predicted_class_id):
+                output = out_pattern.match(tokenizer.decode(input)).groupdict()
+                output['response'] = model.config.id2label[class_id]
+                f.write(json.dumps(output) + '\n')
         
 def main(args):
     dataset = load_dataset("json", data_files=args.dataset)
@@ -80,7 +83,7 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
-    base_model = AutoModelForCausalLM.from_pretrained(
+    base_model = AutoModelForSequenceClassification.from_pretrained(
         peft_config.base_model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
@@ -96,6 +99,9 @@ def main(args):
             bnb_4bit_use_double_quant=args.double_quant,
             bnb_4bit_quant_type=args.quant_type
         ),
+        label2id={"Included": 0, "Excluded": 1},
+        id2label={0: "Included", 1: "Excluded"},
+        num_labels=2,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)

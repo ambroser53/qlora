@@ -3,6 +3,7 @@ import argparse
 import json
 from sklearn import metrics
 import warnings
+import math
 
 def warn(*args, **kwargs):
     pass
@@ -29,7 +30,12 @@ def main(args):
 
     inc_exc = results[results['instruction'].str.contains('should the study be included or excluded?')]
     inc_exc = inc_exc.transform(lambda x: x.str.strip())
-    inc_exc['prediction'] = inc_exc['response'].str.split().str[0]
+    if args.rogue_tokens:
+        inc_exc['prediction'] = ["Included" if (pred.lower().index('include') if 'include' in pred else math.inf) <
+                                               (pred.lower().index('exclude') if 'exclude' in pred else math.inf) else
+                                 "Excluded" for pred in inc_exc['response']]
+    else:
+        inc_exc['prediction'] = inc_exc['response'].str.split().str[0]
 
     merged = pd.merge(dataset_inc_exc, inc_exc, on=['instruction', 'input'], how='left')
 
@@ -45,5 +51,6 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_path', type=str, required=True, help='Path to eval dataset')
     parser.add_argument('--label_field_name', default='label', type=str, help='Name of label field in dataset')
     parser.add_argument('--lines', action='store_true', help='Whether results are stored as lines (jsonl)')
+    parser.add_argument('--rogue_tokens', action='store_true', help='Whether the model has an unusual starting tokens')
     args = parser.parse_args()
     main(args)
