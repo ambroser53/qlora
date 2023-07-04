@@ -50,7 +50,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
 
     for batch in tqdm(batch_iter, total=len(batch_iter)):
         input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
-        logits = model(input_ids=input_ids, attention_mask=attention_mask, generation_config=generation_config).logits
+        logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
 
         predicted_class_id = logits.argmax().item()
         print(predicted_class_id)
