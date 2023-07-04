@@ -356,7 +356,7 @@ def get_accelerate_model(args, checkpoint_dir):
     )
 
     # load score weight
-    if checkpoint_dir:
+    if checkpoint_dir and args.with_trainer_checkpoint:
         model.score.load_state_dict(torch.load(join(checkpoint_dir, 'score_weight.pt')))
 
     if compute_dtype == torch.float16 and args.bits == 4:
@@ -457,13 +457,10 @@ def smart_tokenizer_and_embedding_resize(
 
     if num_new_tokens > 0:
         input_embeddings = model.get_input_embeddings().weight.data
-        #output_embeddings = model.get_output_embeddings().weight.data
 
         input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        #output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        #output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 @dataclass
 class DataCollatorForCausalLM(object):
@@ -485,15 +482,8 @@ class DataCollatorForCausalLM(object):
             add_special_tokens=False,
         )
         targets = torch.tensor([[0 if example['output'].split()[0] == 'Included' else 1] for example in instances]) ## force to only first token no eos
-        # tokenized_targets = self.tokenizer(
-        #     targets,
-        #     max_length=self.target_max_len,
-        #     truncation=True,
-        #     add_special_tokens=False,
-        # )
         # Build the input and labels for causal LM
         input_ids = []
-        labels = [] 
         for tokenized_source in tokenized_sources_with_prompt['input_ids']:
             input_ids.append(torch.tensor(tokenized_source))
         # Apply padding
@@ -508,10 +498,6 @@ class DataCollatorForCausalLM(object):
         else:
             data_dict['labels'] = targets
 
-        examine = [True if input_id is None else "" for input_id in data_dict['input_ids']]
-        examine = examine if any([e != '' for e in examine]) else None
-        if examine:
-            print(examine)
         return data_dict
 
     def eval(self, eval_mode: bool):
