@@ -92,6 +92,8 @@ def main(args):
             model=base_model,
         )
 
+    tokenizer.padding_side = "left"
+
     if not args.bits == 4 and not args.bits == 8:
         base_model.half()
 
@@ -162,6 +164,7 @@ def main(args):
                 model = base_model
 
             print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
+
             with torch.no_grad():
                 model.eval()
                 dataset_dict['data_collator'].eval(True)
