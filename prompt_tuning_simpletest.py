@@ -157,12 +157,15 @@ def main(args):
     args.do_eval = False
 
     args.dataset = reviews[0]
+    temp_do_train = args.do_train
+    args.do_train = True
     data_module = make_data_module(tokenizer, args)
+    args.do_train = temp_do_train
     dataset = data_module['train_dataset']
 
     train_index, test_index = next(kf.split(data_module['train_dataset']))
 
-    if args.do_train and False:
+    if args.do_train:
         data_module['train_dataset'] = dataset.select(train_index)
 
         hfparser = HfArgumentParser((
@@ -288,7 +291,6 @@ if __name__ == '__main__':
 
     args.do_predict = False
     args.do_eval = False
-    args.do_train = True
     args.predict_with_generate = False
     args.train_on_source = False
     args.max_train_samples = None
