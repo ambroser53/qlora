@@ -217,7 +217,6 @@ def main(args):
             train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index), batch_size=args.train_batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
             test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.eval_batch_size, shuffle=True, collate_fn=dataset_dict['data_collator'])
 
-
             if args.do_train:
                 print("pre-peft cuda usage: " + str(torch.cuda.mem_get_info()))
                 peft_model = get_peft_model(base_model, prompt_config)

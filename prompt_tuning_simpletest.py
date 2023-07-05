@@ -82,10 +82,8 @@ def main(args):
     if len(reviews) == 0:
         raise ValueError(f'No reviews found in {args.data_dir}')
 
-    prompter = Prompter(args.prompt_template)
-
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
-    model = AutoModelForCausalLM.from_pretrained(
+    base_model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
@@ -103,18 +101,18 @@ def main(args):
         ),
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
+    base_model = prepare_model_for_kbit_training(base_model, use_gradient_checkpointing=args.gradient_checkpointing)
     if args.gradient_checkpointing:
-        model.gradient_checkpointing_enable()
+        base_model.gradient_checkpointing_enable()
 
-        if hasattr(model, "enable_input_require_grads"):
+        if hasattr(base_model, "enable_input_require_grads"):
             print("Enabling input require grads")
-            model.enable_input_require_grads()
+            base_model.enable_input_require_grads()
         else:
             print("Enabling input require grads via forward hook")
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
-            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+            base_model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if tokenizer.bos_token is None:
         tokenizer.bos_token = DEFAULT_BOS_TOKEN
@@ -127,13 +125,13 @@ def main(args):
         smart_tokenizer_and_embedding_resize(
             special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
             tokenizer=tokenizer,
-            model=model,
+            model=base_model,
         )
 
     tokenizer.padding_side = "left"
 
     if not args.bits == 4 and not args.bits == 8:
-        model.half()
+        base_model.half()
 
     # if torch.__version__ >= "2" and sys.platform != "win32":
     #     model = torch.compile(model)
@@ -150,115 +148,143 @@ def main(args):
     )
 
     kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
+    y_pred = []
+    y_true = []
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    args.do_predict = False
-    args.do_eval = False
+    for review in tqdm(reviews):
+        args.dataset = review
+        temp_do_train = args.do_train
+        args.do_train = True
+        data_module = make_data_module(tokenizer, args)
+        args.do_train = temp_do_train
+        dataset = data_module['train_dataset']
 
-    args.dataset = reviews[0]
-    temp_do_train = args.do_train
-    args.do_train = True
-    data_module = make_data_module(tokenizer, args)
-    args.do_train = temp_do_train
-    dataset = data_module['train_dataset']
+        review_y_pred = []
+        review_y_true = []
 
-    train_index, test_index = next(kf.split(data_module['train_dataset']))
+        for train_index, test_index in kf.split(data_module['train_dataset']):
 
-    if args.do_train:
-        data_module['train_dataset'] = dataset.select(train_index)
+            if args.do_train:
+                data_module['train_dataset'] = dataset.select(train_index)
 
-        hfparser = HfArgumentParser((
-             TrainingArguments
-        ))
-        training_args = hfparser.parse_args_into_dataclasses(return_remaining_strings=True)[0]
+                hfparser = HfArgumentParser((
+                     TrainingArguments
+                ))
+                training_args = hfparser.parse_args_into_dataclasses(return_remaining_strings=True)[0]
 
-        print("pre-peft cuda usage: " + str(torch.cuda.mem_get_info()))
-        model = get_peft_model(model, prompt_config)
-        print("New soft prompts:")
-        print(model.print_trainable_parameters())
-        print("pre-train cuda usage: " + str(torch.cuda.mem_get_info()))
+                print("pre-peft cuda usage: " + str(torch.cuda.mem_get_info()))
+                model = get_peft_model(base_model, prompt_config)
+                print("New soft prompts:")
+                print(model.print_trainable_parameters())
+                print("pre-train cuda usage: " + str(torch.cuda.mem_get_info()))
 
-        model.train()
-        data_module['data_collator'].eval(False)
-        training_args.max_steps = (len(data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
-        training_args.per_device_train_batch_size = args.train_batch_size
+                model.train()
+                data_module['data_collator'].eval(False)
+                training_args.max_steps = (len(data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
+                training_args.per_device_train_batch_size = args.train_batch_size
 
-        trainer = Seq2SeqTrainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,
-            **{k: v for k, v in data_module.items() if k != 'predict_dataset'},
-        )
+                trainer = Seq2SeqTrainer(
+                    model=model,
+                    tokenizer=tokenizer,
+                    args=training_args,
+                    **{k: v for k, v in data_module.items() if k != 'predict_dataset'},
+                )
 
-        trainer.train()
-
-    print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
-
-    with torch.no_grad():
-        model.eval()
-        data_module['data_collator'].eval(True)
-        out_pattern = re.compile(
-            '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
-            re.DOTALL)
-
-        test_set = dataset.select(test_index)
-
-        original_columns = test_set.column_names
-        test_set = test_set.map(
-            lambda x: tokenizer(
-                x['input'],
-                truncation=True,
-                padding=False),
-            remove_columns=original_columns)
-
-        collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
-        batch_iter = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collator)
-
-        for batch in tqdm(batch_iter, total=len(batch_iter)):
-            input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
-            outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
-                                        max_new_tokens=args.target_max_len,
-                                        return_dict_in_generate=True,
-                                        output_scores=True,
-                                        num_beams=args.num_beams,)
-
-            decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
-
-            with open(args.output_file, "a+") as f:
-                for output in decoded_outputs:
-                    f.write(json.dumps(out_pattern.match(output).groupdict()) + '\n')
-
-            # compute probability of each generated token
-            if args.num_beams == 1:
-                transition_scores = model.compute_transition_scores(
-                    outputs.sequences, outputs.scores, normalize_logits=True
-                )[0]
+                trainer.train()
             else:
-                transition_scores = model.compute_transition_scores(
-                    outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
-                ).cpu()
+                model = base_model
 
-                # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
-                # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
+            print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
 
-                output_length = input_ids.shape[1] + np.sum(transition_scores.cpu().numpy() < 0, axis=1)
-                length_penalty = model.generation_config.length_penalty
-                reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
-                print(np.allclose(outputs.sequences_scores.cpu(), reconstructed_scores))
-                transition_scores = reconstructed_scores
+            eval_file_out = args.output_file
+            if args.do_train:
+                eval_file_out = eval_file_out.replace('.json', '_trained.json')
 
-            input_length = input_ids.shape[1]
-            input_toks = input_ids[:, input_length - 2:]
-            generated_tokens = outputs.sequences[:, input_length - 2:input_length + 5]
-            i = -2
+            print("eval file out: "+eval_file_out)
 
-            print(tokenizer.decode(input_ids[0]))
-            for tok, score in zip(generated_tokens[0], transition_scores[:7]):
-                # | token | token string | probability
-                print(
-                    f"| {i} | {input_toks[i + 2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
-                i += 1
+            with torch.no_grad():
+                model.eval()
+                data_module['data_collator'].eval(True)
+                out_pattern = re.compile(
+                    '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
+                    re.DOTALL)
+
+                test_set = dataset.select(test_index)
+
+                test_set_copy = test_set
+                original_columns = test_set.column_names
+                test_set = test_set.map(
+                    lambda x: tokenizer(
+                        x['input'],
+                        truncation=True,
+                        padding=False),
+                    remove_columns=original_columns)
+
+                collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
+                batch_iter = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collator)
+
+                for i, batch in enumerate(tqdm(batch_iter, total=len(batch_iter))):
+                    input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
+                    outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
+                                                max_new_tokens=args.target_max_len,
+                                                return_dict_in_generate=True,
+                                                output_scores=True,
+                                                num_beams=args.num_beams,)
+
+                    decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
+
+                    with open(eval_file_out, "a+") as f:
+                        for output in decoded_outputs:
+                            f.write(json.dumps(out_pattern.match(output).groupdict()) + '\n')
+
+                    print_sequence_response(model, tokenizer, input_ids, outputs, args.num_beams)
+
+                    label_idx = [i * args.eval_batch_size + j for j in range(args.eval_batch_size)]
+                    labels = [test_set_copy[idx]['label'] for idx in label_idx]
+
+                    review_y_pred.extend([output.split()[0] for output in decoded_outputs])
+                    review_y_true.extend([label.split()[0] for label in labels])
+
+        y_pred.extend(review_y_pred)
+        y_true.extend(review_y_true)
+
+        with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
+            f.write(metrics.classification_report(review_y_true, review_y_pred))
+
+    with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
+        f.write(metrics.classification_report(y_true, y_pred))
+
+def print_sequence_response(model, tokenizer, input_ids, outputs, num_beams):
+    # compute probability of each generated token
+    if num_beams == 1:
+        transition_scores = model.compute_transition_scores(
+            outputs.sequences, outputs.scores, normalize_logits=True
+        )[0]
+    else:
+        transition_scores = model.compute_transition_scores(
+            outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
+        ).cpu()
+
+        # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
+        # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
+
+        output_length = input_ids.shape[1] + np.sum(transition_scores.cpu().numpy() < 0, axis=1)
+        length_penalty = model.generation_config.length_penalty
+        reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
+        print(np.allclose(outputs.sequences_scores.cpu(), reconstructed_scores))
+        transition_scores = reconstructed_scores
+    input_length = input_ids.shape[1]
+    input_toks = input_ids[:, input_length - 2:]
+    generated_tokens = outputs.sequences[:, input_length - 2:input_length + 5]
+    i = -2
+    print(tokenizer.decode(input_ids[0]))
+    for tok, score in zip(generated_tokens[0], transition_scores[:7]):
+        # | token | token string | probability
+        print(
+            f"| {i} | {input_toks[i + 2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
+        i += 1
 
 
 if __name__ == '__main__':
