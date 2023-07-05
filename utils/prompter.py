@@ -17,7 +17,10 @@ class Prompter(object):
             template_name = "alpaca"
         file_name = osp.join("./templates", f"{template_name}.json")
         if not osp.exists(file_name):
-            raise ValueError(f"Can't read {file_name}")
+            if not osp.exists(osp.join("../templates", f"{template_name}.json")):
+                raise ValueError(f"Can't read {file_name}")
+            else:
+                file_name = osp.join("../templates", f"{template_name}.json")
         with open(file_name) as fp:
             self.template = json.load(fp)
         if self._verbose:
