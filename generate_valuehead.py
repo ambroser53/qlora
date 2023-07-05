@@ -1,5 +1,6 @@
 import argparse
 import json
+import os.path
 import sys
 import torch
 from tqdm import tqdm
@@ -100,6 +101,8 @@ def main(args):
         id2label={0: "Included", 1: "Excluded"},
         num_labels=2,
     )
+
+    base_model.score.load_state_dict(torch.load(os.path.join(os.path.dirname(args.base_model_name_or_path), 'score_weight.pt')))
 
     tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)

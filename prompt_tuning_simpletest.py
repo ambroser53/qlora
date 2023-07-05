@@ -1,5 +1,6 @@
 import argparse
 import json
+import os.path
 
 import pandas as pd
 from glob import glob
@@ -161,7 +162,7 @@ def main(args):
 
     train_index, test_index = next(kf.split(data_module['train_dataset']))
 
-    if args.do_train:
+    if args.do_train and False:
         data_module['train_dataset'] = dataset.select(train_index)
 
         hfparser = HfArgumentParser((
@@ -200,16 +201,16 @@ def main(args):
 
         test_set = dataset.select(test_index)
 
-        original_columns = test_set['train'].column_names
-        test_set['train'] = test_set['train'].map(
+        original_columns = test_set.column_names
+        test_set = test_set.map(
             lambda x: tokenizer(
-                prompter.generate_prompt(x['instruction'], x['input']),
+                x['input'],
                 truncation=True,
                 padding=False),
             remove_columns=original_columns)
 
         collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
-        batch_iter = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, collate_fn=collator)
+        batch_iter = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collator)
 
         for batch in tqdm(batch_iter, total=len(batch_iter)):
             input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
@@ -219,7 +220,7 @@ def main(args):
                                         output_scores=True,
                                         num_beams=args.num_beams,)
 
-            decoded_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
 
             with open(args.output_file, "a+") as f:
                 for output in decoded_outputs:
@@ -257,8 +258,6 @@ def main(args):
                 i += 1
 
 
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name_or_path', type=str, required=True, help='Path to lora adapter weights merged into model or model path')
@@ -280,9 +279,13 @@ if __name__ == '__main__':
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_beams", type=int, default=2)
-    parser.add_argument("--output_file", type=str, default="output.jsonl")
+    parser.add_argument("--output_file", type=str, default="eval.jsonl")
     parser.add_argument("--num_train_epochs", type=int, default=3)
     args = parser.parse_args()
+
+    if args.output_file == "eval.jsonl" and os.path.exists(args.model_name_or_path):
+        args.output_file = args.model_name_or_path + "_eval.jsonl"
+
     args.do_predict = False
     args.do_eval = False
     args.do_train = True
