@@ -177,6 +177,8 @@ def main(args):
 
         model.train()
         data_module['data_collator'].eval(False)
+        training_args.max_steps = len(data_module['train_dataset']) * args.num_train_epochs
+        training_args.per_device_train_batch_size = args.train_batch_size
 
         trainer = Seq2SeqTrainer(
             model=model,
@@ -278,6 +280,8 @@ if __name__ == '__main__':
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_beams", type=int, default=2)
+    parser.add_argument("--output_file", type=str, default="output.jsonl")
+    parser.add_argument("--num_train_epochs", type=int, default=3)
     args = parser.parse_args()
     args.do_predict = False
     args.do_eval = False
