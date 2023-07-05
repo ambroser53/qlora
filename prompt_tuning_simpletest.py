@@ -177,7 +177,7 @@ def main(args):
 
         model.train()
         data_module['data_collator'].eval(False)
-        training_args.max_steps = len(data_module['train_dataset']) * args.num_train_epochs
+        training_args.max_steps = (len(data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
         training_args.per_device_train_batch_size = args.train_batch_size
 
         trainer = Seq2SeqTrainer(
