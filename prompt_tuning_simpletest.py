@@ -269,10 +269,12 @@ def main(args):
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
 
-        with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
+        results_output_dir = f'{review.split(".")[0]}_prompt_results.txt' if not args.do_train else f'{review.split(".")[0]}_prompt_results_train.txt'
+
+        with open(results_output_dir, 'w+') as f:
             f.write(metrics.classification_report(review_y_true, review_y_pred))
 
-    with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
+    with open(f'review_prompt_results_complete.txt', 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
 
 
