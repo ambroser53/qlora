@@ -241,7 +241,7 @@ def main(args):
                 label_iter = DataLoader(test_set_labels, batch_size=args.eval_batch_size, shuffle=False)
 
                 for batch, labels in zip(batch_iter, label_iter):
-                    labels = labels['label'].tolist()
+                    labels = labels['label']
                     input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
                     outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
                                              max_new_tokens=args.target_max_len,
