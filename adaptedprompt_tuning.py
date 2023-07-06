@@ -1,22 +1,70 @@
 import argparse
+import json
+import os.path
+
 import pandas as pd
 from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup
-from peft import PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training, AdaptionPromptConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup, \
+    HfArgumentParser, Seq2SeqTrainingArguments, Seq2SeqTrainer, DataCollatorForSeq2Seq
+from peft import TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training, AdaptionPromptConfig
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 import sys
-from qlora import make_data_module
 from tqdm import tqdm
 import numpy as np
+from dataclasses import dataclass, field
+import re
+from qlora import make_data_module
 
+IGNORE_INDEX = -100
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
 DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
+
+
+@dataclass
+class TrainingArguments(Seq2SeqTrainingArguments):
+    adam8bit: bool = field(
+        default=False,
+        metadata={"help": "Use 8-bit adam."}
+    )
+    report_to: str = field(
+        default='none',
+        metadata={"help": "To use wandb or something else for reporting."}
+    )
+    output_dir: str = field(default='./output', metadata={"help": 'The output dir for logs and checkpoints'})
+    optim: str = field(default='paged_adamw_32bit', metadata={"help": 'The optimizer to be used'})
+    per_device_train_batch_size: int = field(default=1, metadata={
+        "help": 'The training batch size per GPU. Increase for better speed.'})
+    gradient_accumulation_steps: int = field(default=16, metadata={
+        "help": 'How many gradients to accumulate before to perform an optimizer step'})
+    max_steps: int = field(default=10000, metadata={"help": 'How many optimizer update steps to take'})
+    weight_decay: float = field(default=0.0, metadata={
+        "help": 'The L2 weight decay rate of AdamW'})  # use lora dropout instead for regularization if needed
+    learning_rate: float = field(default=0.0002, metadata={"help": 'The learnign rate'})
+    remove_unused_columns: bool = field(default=False,
+                                        metadata={"help": 'Removed unused columns. Needed to make this codebase work.'})
+    max_grad_norm: float = field(default=0.3, metadata={
+        "help": 'Gradient clipping max norm. This is tuned and works well for all models tested.'})
+    gradient_checkpointing: bool = field(default=True,
+                                         metadata={"help": 'Use gradient checkpointing. You want to use this.'})
+    do_train: bool = field(default=True, metadata={"help": 'To train or not to train, that is the question?'})
+    lr_scheduler_type: str = field(default='constant', metadata={
+        "help": 'Learning rate schedule. Constant a bit better than cosine, and has advantage for analysis'})
+    warmup_ratio: float = field(default=0.03, metadata={"help": 'Fraction of steps to do a warmup for'})
+    logging_steps: int = field(default=10,
+                               metadata={"help": 'The frequency of update steps after which to log the loss'})
+    group_by_length: bool = field(default=True, metadata={
+        "help": 'Group sequences into batches with same length. Saves memory and speeds up training considerably.'})
+    save_strategy: str = field(default='steps', metadata={"help": 'When to save checkpoints'})
+    save_steps: int = field(default=250, metadata={"help": 'How often to save a model'})
+    save_total_limit: int = field(default=40,
+                                  metadata={"help": 'How many checkpoints to save before the oldest is overwritten'})
+
 
 def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
     """Resize tokenizer and embedding.
@@ -35,10 +83,6 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-
-def process_text(text):
-    pass
 
 
 def main(args):
@@ -74,8 +118,10 @@ def main(args):
             base_model.enable_input_require_grads()
         else:
             print("Enabling input require grads via forward hook")
+
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
+
             base_model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if tokenizer.bos_token is None:
@@ -91,6 +137,8 @@ def main(args):
             tokenizer=tokenizer,
             model=base_model,
         )
+
+    tokenizer.padding_side = "left"
 
     if not args.bits == 4 and not args.bits == 8:
         base_model.half()
@@ -111,125 +159,153 @@ def main(args):
     y_true = []
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    args.do_predict = False
-    args.do_eval = False
+    out_pattern = re.compile(
+        '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
+        re.DOTALL)
 
     for review in tqdm(reviews):
         args.dataset = review
-        dataset_dict = make_data_module(tokenizer, args)
+        temp_do_train = args.do_train
+        args.do_train = True
+        data_module = make_data_module(tokenizer, args)
+        args.do_train = temp_do_train
+        dataset = data_module['train_dataset']
 
         review_y_pred = []
         review_y_true = []
 
-        for train_index, test_index in kf.split(dataset_dict['train_dataset']):
-            train_loader = DataLoader(dataset_dict['train_dataset'].select(train_index),
-                                      batch_size=args.train_batch_size, shuffle=True,
-                                      collate_fn=dataset_dict['data_collator'])
-            test_loader = DataLoader(dataset_dict['train_dataset'].select(test_index), batch_size=args.eval_batch_size,
-                                     shuffle=True, collate_fn=dataset_dict['data_collator'])
+        p_bar = tqdm(total=len(data_module['train_dataset']))
+
+        for train_index, test_index in kf.split(data_module['train_dataset']):
 
             if args.do_train:
+                data_module['train_dataset'] = dataset.select(train_index)
+
+                hfparser = HfArgumentParser((
+                    TrainingArguments
+                ))
+                training_args = hfparser.parse_args_into_dataclasses(return_remaining_strings=True)[0]
+
                 print("pre-peft cuda usage: " + str(torch.cuda.mem_get_info()))
-                peft_model = get_peft_model(base_model, prompt_config)
+                model = get_peft_model(base_model, prompt_config)
                 print("New soft prompts:")
-                print(peft_model.print_trainable_parameters())
+                print(model.print_trainable_parameters())
                 print("pre-train cuda usage: " + str(torch.cuda.mem_get_info()))
 
-                optimizer = torch.optim.AdamW(peft_model.parameters(), lr=args.lr)
-                lr_scheduler = get_linear_schedule_with_warmup(
-                    optimizer=optimizer,
-                    num_warmup_steps=0,
-                    num_training_steps=(len(train_loader)),
+                model.train()
+                data_module['data_collator'].eval(False)
+                training_args.max_steps = (len(
+                    data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
+                training_args.per_device_train_batch_size = args.train_batch_size
+
+                trainer = Seq2SeqTrainer(
+                    model=model,
+                    tokenizer=tokenizer,
+                    args=training_args,
+                    **{k: v for k, v in data_module.items() if k != 'predict_dataset'},
                 )
 
-                peft_model.train()
-                dataset_dict['data_collator'].eval(False)
-                for batch in train_loader:
-                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(
-                        device), batch['labels'].to(device)
-                    if input_ids is None:
-                        raise ValueError("input_ids is None")
-
-                    outputs = peft_model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                    loss = outputs.loss
-                    loss.backward()
-                    optimizer.step()
-                    lr_scheduler.step()
-                    optimizer.zero_grad()
-                model = peft_model
+                trainer.train()
             else:
                 model = base_model
 
             print("pre-eval cuda usage: " + str(torch.cuda.mem_get_info()))
+
             with torch.no_grad():
                 model.eval()
-                dataset_dict['data_collator'].eval(True)
-                for batch in test_loader:
-                    input_ids, attention_mask, labels = batch['input_ids'].to(device), batch['attention_mask'].to(
-                        device), batch['labels']
+                data_module['data_collator'].eval(True)
 
-                    outputs = model.generate(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        max_new_tokens=args.target_max_len,
-                        return_dict_in_generate=True,
-                        output_scores=True,
-                        num_beams=args.num_beams,
-                    )
+                test_set = dataset.select(test_index)
 
-                    # compute probability of each generated token
-                    if args.num_beams == 1:
-                        transition_scores = model.compute_transition_scores(
-                            outputs.sequences, outputs.scores, normalize_logits=True
-                        )[0]
-                    else:
-                        transition_scores = model.compute_transition_scores(
-                            outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
-                        ).cpu()
+                test_set_labels = test_set.map(
+                    lambda x: x,
+                    remove_columns=[c for c in test_set.column_names if c != 'label']
+                )
+                original_columns = test_set.column_names
+                test_set = test_set.map(
+                    lambda x: tokenizer(
+                        x['input'],
+                        truncation=True,
+                        padding=False),
+                    remove_columns=original_columns)
 
-                        # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
-                        # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
+                collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
+                batch_iter = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collator)
+                label_iter = DataLoader(test_set_labels, batch_size=args.eval_batch_size, shuffle=False)
 
-                        output_length = input_ids.shape[1] + np.sum(transition_scores.cpu().numpy() < 0, axis=1)
-                        length_penalty = model.generation_config.length_penalty
-                        reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
-                        print(np.allclose(outputs.sequences_scores.cpu(), reconstructed_scores))
-                        transition_scores = reconstructed_scores
-
-                    input_length = input_ids.shape[1]
-                    input_toks = input_ids[:, input_length - 2:]
-                    generated_tokens = outputs.sequences[:, input_length - 2:input_length + 5]
-                    i = -2
-
-                    print(tokenizer.decode(input_ids[0]))
-                    for tok, score in zip(generated_tokens[0], transition_scores[:7]):
-                        # | token | token string | probability
-                        print(
-                            f"| {i} | {input_toks[i + 2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
-                        i += 1
+                for batch, labels in zip(batch_iter, label_iter):
+                    labels = labels['label']
+                    input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
+                    outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
+                                             max_new_tokens=args.target_max_len,
+                                             return_dict_in_generate=True,
+                                             output_scores=True,
+                                             num_beams=args.num_beams, )
 
                     decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
-                    decoded_labels = labels  # tokenizer.batch_decode([[t for t in l if t != -100] for l in labels], skip_special_tokens=True)
-                    review_y_pred.extend([output.split()[0] for output in decoded_outputs])
-                    review_y_true.extend([label.split()[0] for label in decoded_labels])
 
-            ## swap out the prompt
+                    responses = [out_pattern.match(output).groupdict()["response"].split()[0] for output in
+                                 decoded_outputs]
+                    print("responses:")
+                    print(responses)
+                    print("labels:")
+                    print(labels)
+
+                    print_sequence_response(model, tokenizer, input_ids, outputs, args.num_beams)
+
+                    review_y_pred.extend(responses)
+                    review_y_true.extend([label.split()[0] for label in labels])
+                    print(metrics.classification_report(review_y_true, review_y_pred))
+
+                    p_bar.update(args.eval_batch_size)
 
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
 
-        with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
+        results_output_dir = f'{review.split(".")[0]}_adaptedprompt_results.txt' if not args.do_train else f'{review.split(".")[0]}_prompt_results_train.txt'
+
+        with open(results_output_dir, 'w+') as f:
             f.write(metrics.classification_report(review_y_true, review_y_pred))
 
-    with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
+    with open(f'review_adaptedprompt_results_complete.txt', 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
 
+
+def print_sequence_response(model, tokenizer, input_ids, outputs, num_beams):
+    # compute probability of each generated token
+    if num_beams == 1:
+        transition_scores = model.compute_transition_scores(
+            outputs.sequences, outputs.scores, normalize_logits=True
+        )[0]
+    else:
+        transition_scores = model.compute_transition_scores(
+            outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
+        ).cpu()
+
+        # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
+        # Tip: set `normalize_logits=True` to recompute the scores from the normalized logits.
+
+        output_length = input_ids.shape[1] + np.sum(transition_scores.cpu().numpy() < 0, axis=1)
+        length_penalty = model.generation_config.length_penalty
+        reconstructed_scores = transition_scores.sum(axis=1) / (output_length ** length_penalty)
+        print(np.allclose(outputs.sequences_scores.cpu(), reconstructed_scores))
+        transition_scores = reconstructed_scores
+    input_length = input_ids.shape[1]
+    input_toks = input_ids[:, input_length - 2:]
+    generated_tokens = outputs.sequences[:, input_length - 2:input_length + 5]
+    i = -2
+    print(tokenizer.decode(input_ids[0]))
+    for tok, score in zip(generated_tokens[0], transition_scores[:7]):
+        # | token | token string | probability
+        print(
+            f"| {i} | {input_toks[i + 2][0] if i < 0 else None} | {tok:5d} | {tokenizer.decode(tok):8s} | {np.exp(score.cpu().numpy()):.2%}")
+        i += 1
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, required=True, help='Path to lora adapter weights merged into model or model path')
+    parser.add_argument('--model_name_or_path', type=str, required=True,
+                        help='Path to lora adapter weights merged into model or model path')
     parser.add_argument('--data_dir', type=str, required=True, help='Path to directory containing reviews')
     parser.add_argument('--num_folds', default=5, type=int, help='Number of folds for cross validation')
     parser.add_argument("--prompt_template", type=str, default="alpaca")
@@ -248,12 +324,17 @@ if __name__ == '__main__':
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_beams", type=int, default=2)
+    parser.add_argument("--output_file", type=str, default="eval.jsonl")
+    parser.add_argument("--num_train_epochs", type=int, default=3)
     parser.add_argument("--num_adapter_tokens", type=int, default=10)
     parser.add_argument("--num_adapter_layers", type=int, default=20)
     args = parser.parse_args()
+
+    if args.output_file == "eval.jsonl" and os.path.exists(args.model_name_or_path):
+        args.output_file = args.model_name_or_path + "_eval.jsonl"
+
     args.do_predict = False
     args.do_eval = False
-    args.do_train = True
     args.predict_with_generate = False
     args.train_on_source = False
     args.max_train_samples = None
