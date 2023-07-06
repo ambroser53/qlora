@@ -193,6 +193,7 @@ def main(args):
                 print("pre-train cuda usage: " + str(torch.cuda.mem_get_info()))
 
                 model.train()
+                model.enable_input_require_grads()
                 data_module['data_collator'].eval(False)
                 training_args.max_steps = (len(
                     data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
