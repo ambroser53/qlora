@@ -152,6 +152,9 @@ def main(args):
     y_true = []
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    out_pattern = re.compile(
+        '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
+        re.DOTALL)
 
     for review in tqdm(reviews):
         args.dataset = review
@@ -163,6 +166,8 @@ def main(args):
 
         review_y_pred = []
         review_y_true = []
+
+        p_bar = tqdm(total=len(data_module['train_dataset']))
 
         for train_index, test_index in kf.split(data_module['train_dataset']):
 
@@ -198,22 +203,16 @@ def main(args):
 
             print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
 
-            eval_file_out = args.output_file
-            if args.do_train:
-                eval_file_out = eval_file_out.replace('.json', '_trained.json')
-
-            print("eval file out: "+eval_file_out)
-
             with torch.no_grad():
                 model.eval()
                 data_module['data_collator'].eval(True)
-                out_pattern = re.compile(
-                    '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
-                    re.DOTALL)
 
                 test_set = dataset.select(test_index)
 
-                test_set_copy = test_set
+                test_set_labels = test_set.map(
+                    lambda x: x,
+                    remove_columns=[c for c in test_set.column_names if c != 'label']
+                )
                 original_columns = test_set.column_names
                 test_set = test_set.map(
                     lambda x: tokenizer(
@@ -224,8 +223,9 @@ def main(args):
 
                 collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
                 batch_iter = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collator)
+                label_iter = DataLoader(test_set_labels, batch_size=args.eval_batch_size, shuffle=False)
 
-                for i, batch in enumerate(tqdm(batch_iter, total=len(batch_iter))):
+                for i, (batch, labels) in enumerate(zip(batch_iter,label_iter)):
                     input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
                     outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
                                                 max_new_tokens=args.target_max_len,
@@ -235,17 +235,15 @@ def main(args):
 
                     decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
 
-                    with open(eval_file_out, "a+") as f:
-                        for output in decoded_outputs:
-                            f.write(json.dumps(out_pattern.match(output).groupdict()) + '\n')
+                    responses = [out_pattern.match(output).groupdict()["response"].split()[0] for output in decoded_outputs]
 
                     print_sequence_response(model, tokenizer, input_ids, outputs, args.num_beams)
 
-                    label_idx = [i * args.eval_batch_size + j for j in range(args.eval_batch_size)]
-                    labels = [test_set_copy[idx]['label'] for idx in label_idx]
-
-                    review_y_pred.extend([output.split()[0] for output in decoded_outputs])
+                    review_y_pred.extend(responses)
                     review_y_true.extend([label.split()[0] for label in labels])
+                    print(metrics.classification_report(review_y_true, review_y_pred))
+
+                    p_bar.update(args.eval_batch_size)
 
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
