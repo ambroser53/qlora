@@ -8,7 +8,8 @@ from sklearn.model_selection import KFold
 from sklearn import metrics
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup, \
     HfArgumentParser, Seq2SeqTrainingArguments, Seq2SeqTrainer, DataCollatorForSeq2Seq
-from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, prepare_model_for_kbit_training
+from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, \
+    prepare_model_for_kbit_training
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -28,6 +29,7 @@ DEFAULT_EOS_TOKEN = '</s>'
 DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
 
+
 @dataclass
 class TrainingArguments(Seq2SeqTrainingArguments):
     adam8bit: bool = field(
@@ -40,22 +42,32 @@ class TrainingArguments(Seq2SeqTrainingArguments):
     )
     output_dir: str = field(default='./output', metadata={"help": 'The output dir for logs and checkpoints'})
     optim: str = field(default='paged_adamw_32bit', metadata={"help": 'The optimizer to be used'})
-    per_device_train_batch_size: int = field(default=1, metadata={"help": 'The training batch size per GPU. Increase for better speed.'})
-    gradient_accumulation_steps: int = field(default=16, metadata={"help": 'How many gradients to accumulate before to perform an optimizer step'})
+    per_device_train_batch_size: int = field(default=1, metadata={
+        "help": 'The training batch size per GPU. Increase for better speed.'})
+    gradient_accumulation_steps: int = field(default=16, metadata={
+        "help": 'How many gradients to accumulate before to perform an optimizer step'})
     max_steps: int = field(default=10000, metadata={"help": 'How many optimizer update steps to take'})
-    weight_decay: float = field(default=0.0, metadata={"help": 'The L2 weight decay rate of AdamW'}) # use lora dropout instead for regularization if needed
+    weight_decay: float = field(default=0.0, metadata={
+        "help": 'The L2 weight decay rate of AdamW'})  # use lora dropout instead for regularization if needed
     learning_rate: float = field(default=0.0002, metadata={"help": 'The learnign rate'})
-    remove_unused_columns: bool = field(default=False, metadata={"help": 'Removed unused columns. Needed to make this codebase work.'})
-    max_grad_norm: float = field(default=0.3, metadata={"help": 'Gradient clipping max norm. This is tuned and works well for all models tested.'})
-    gradient_checkpointing: bool = field(default=True, metadata={"help": 'Use gradient checkpointing. You want to use this.'})
+    remove_unused_columns: bool = field(default=False,
+                                        metadata={"help": 'Removed unused columns. Needed to make this codebase work.'})
+    max_grad_norm: float = field(default=0.3, metadata={
+        "help": 'Gradient clipping max norm. This is tuned and works well for all models tested.'})
+    gradient_checkpointing: bool = field(default=True,
+                                         metadata={"help": 'Use gradient checkpointing. You want to use this.'})
     do_train: bool = field(default=True, metadata={"help": 'To train or not to train, that is the question?'})
-    lr_scheduler_type: str = field(default='constant', metadata={"help": 'Learning rate schedule. Constant a bit better than cosine, and has advantage for analysis'})
+    lr_scheduler_type: str = field(default='constant', metadata={
+        "help": 'Learning rate schedule. Constant a bit better than cosine, and has advantage for analysis'})
     warmup_ratio: float = field(default=0.03, metadata={"help": 'Fraction of steps to do a warmup for'})
-    logging_steps: int = field(default=10, metadata={"help": 'The frequency of update steps after which to log the loss'})
-    group_by_length: bool = field(default=True, metadata={"help": 'Group sequences into batches with same length. Saves memory and speeds up training considerably.'})
+    logging_steps: int = field(default=10,
+                               metadata={"help": 'The frequency of update steps after which to log the loss'})
+    group_by_length: bool = field(default=True, metadata={
+        "help": 'Group sequences into batches with same length. Saves memory and speeds up training considerably.'})
     save_strategy: str = field(default='steps', metadata={"help": 'When to save checkpoints'})
     save_steps: int = field(default=250, metadata={"help": 'How often to save a model'})
-    save_total_limit: int = field(default=40, metadata={"help": 'How many checkpoints to save before the oldest is overwritten'})
+    save_total_limit: int = field(default=40,
+                                  metadata={"help": 'How many checkpoints to save before the oldest is overwritten'})
 
 
 def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
@@ -110,8 +122,10 @@ def main(args):
             base_model.enable_input_require_grads()
         else:
             print("Enabling input require grads via forward hook")
+
             def make_inputs_require_grad(module, input, output):
                 output.requires_grad_(True)
+
             base_model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if tokenizer.bos_token is None:
@@ -175,7 +189,7 @@ def main(args):
                 data_module['train_dataset'] = dataset.select(train_index)
 
                 hfparser = HfArgumentParser((
-                     TrainingArguments
+                    TrainingArguments
                 ))
                 training_args = hfparser.parse_args_into_dataclasses(return_remaining_strings=True)[0]
 
@@ -187,7 +201,8 @@ def main(args):
 
                 model.train()
                 data_module['data_collator'].eval(False)
-                training_args.max_steps = (len(data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
+                training_args.max_steps = (len(
+                    data_module['train_dataset']) * args.num_train_epochs) // args.train_batch_size
                 training_args.per_device_train_batch_size = args.train_batch_size
 
                 trainer = Seq2SeqTrainer(
@@ -201,7 +216,7 @@ def main(args):
             else:
                 model = base_model
 
-            print("pre-eval cuda usage: "+str(torch.cuda.mem_get_info()))
+            print("pre-eval cuda usage: " + str(torch.cuda.mem_get_info()))
 
             with torch.no_grad():
                 model.eval()
@@ -225,17 +240,22 @@ def main(args):
                 batch_iter = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collator)
                 label_iter = DataLoader(test_set_labels, batch_size=args.eval_batch_size, shuffle=False)
 
-                for i, (batch, labels) in enumerate(zip(batch_iter,label_iter)):
+                for batch, labels in zip(batch_iter, label_iter):
                     input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
                     outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
-                                                max_new_tokens=args.target_max_len,
-                                                return_dict_in_generate=True,
-                                                output_scores=True,
-                                                num_beams=args.num_beams,)
+                                             max_new_tokens=args.target_max_len,
+                                             return_dict_in_generate=True,
+                                             output_scores=True,
+                                             num_beams=args.num_beams, )
 
                     decoded_outputs = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)
 
-                    responses = [out_pattern.match(output).groupdict()["response"].split()[0] for output in decoded_outputs]
+                    responses = [out_pattern.match(output).groupdict()["response"].split()[0] for output in
+                                 decoded_outputs]
+                    print("responses:")
+                    print(responses)
+                    print("labels:")
+                    print(labels)
 
                     print_sequence_response(model, tokenizer, input_ids, outputs, args.num_beams)
 
@@ -253,6 +273,7 @@ def main(args):
 
     with open(f'{review.split(".")[0]}_prompt_results.txt', 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
+
 
 def print_sequence_response(model, tokenizer, input_ids, outputs, num_beams):
     # compute probability of each generated token
@@ -287,7 +308,8 @@ def print_sequence_response(model, tokenizer, input_ids, outputs, num_beams):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, required=True, help='Path to lora adapter weights merged into model or model path')
+    parser.add_argument('--model_name_or_path', type=str, required=True,
+                        help='Path to lora adapter weights merged into model or model path')
     parser.add_argument('--data_dir', type=str, required=True, help='Path to directory containing reviews')
     parser.add_argument('--num_folds', default=5, type=int, help='Number of folds for cross validation')
     parser.add_argument("--prompt_template", type=str, default="alpaca")
