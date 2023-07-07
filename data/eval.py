@@ -23,7 +23,7 @@ def main(args):
                 
         raise ValueError(f'Error reading {args.data_path}')
 
-    label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included.': 'Included'}
+    label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included.': 'Included', 'Excluded:': 'Excluded'}
     dataset_inc_exc = pd.read_json(args.dataset_path)
     dataset_inc_exc[args.label_field_name] = dataset_inc_exc[args.label_field_name].str.split().str[0]
     dataset_inc_exc[args.label_field_name] = dataset_inc_exc[args.label_field_name].transform(lambda x: label_mapping[x] if x in label_mapping else x)
@@ -42,8 +42,10 @@ def main(args):
 
     try:
         print(metrics.classification_report(merged[args.label_field_name], merged['prediction'], digits=2))
+        print(metrics.confusion_matrix(merged[args.label_field_name], merged['prediction']))
     except:
         print(metrics.classification_report(merged[args.label_field_name+'_x'], merged['prediction'], digits=2))
+        print(metrics.confusion_matrix(merged[args.label_field_name+'_x'], merged['prediction']))
     
 
 if __name__ == '__main__':
