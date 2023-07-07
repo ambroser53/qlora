@@ -40,7 +40,7 @@ def main(args):
     merged = merged.dropna(subset=['prediction'])
 
     try:
-        print(metrics.classification_report(merged[args.label_field_name], merged['prediction'], digits=2, labels=['Included', 'Excluded'], output_dict=True))
+        print(metrics.classification_report(merged[args.label_field_name], merged['prediction'], digits=2, labels=['Included', 'Excluded']))
         print(metrics.confusion_matrix(merged[args.label_field_name], merged['prediction'], labels=['Included', 'Excluded']))
     except:
         print(metrics.classification_report(merged[args.label_field_name+'_x'], merged['prediction'], digits=2))
