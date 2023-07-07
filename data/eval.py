@@ -38,6 +38,7 @@ def main(args):
         inc_exc['prediction'] = inc_exc['response'].str.split().str[0]
 
     merged = pd.merge(dataset_inc_exc, inc_exc, on=['instruction', 'input'], how='left')
+    merged = merged.dropna(subset=['prediction'])
 
     try:
         print(metrics.classification_report(merged[args.label_field_name], merged['prediction'], digits=2))
