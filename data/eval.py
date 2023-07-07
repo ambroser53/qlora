@@ -4,6 +4,7 @@ import json
 from sklearn import metrics
 import warnings
 import math
+import re
 
 def warn(*args, **kwargs):
     pass
@@ -31,9 +32,7 @@ def main(args):
     inc_exc = results[results['instruction'].str.contains('should the study be included or excluded?')]
     inc_exc = inc_exc.transform(lambda x: x.str.strip())
     if args.rogue_tokens:
-        inc_exc['prediction'] = ["Included" if (pred.lower().index('include') if 'include' in pred else math.inf) <
-                                               (pred.lower().index('exclude') if 'exclude' in pred else math.inf) else
-                                 "Excluded" for pred in inc_exc['response']]
+        inc_exc['prediction'] = inc_exc['response'].apply(lambda x: re.finditer(r'(?<=\s)(?:include|exclude)(?=\s)', x.str.lower().str.strip()))
     else:
         inc_exc['prediction'] = inc_exc['response'].str.split().str[0]
 
