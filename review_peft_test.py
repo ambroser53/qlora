@@ -257,7 +257,7 @@ def print_sequence_response(model, tokenizer, input_ids, outputs, num_beams):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, required=True,
+    parser.add_argument('--lora_weights', type=str, required=True,
                         help='Path to lora adapter weights merged into model or model path')
     parser.add_argument('--data_dir', type=str, required=True, help='Path to directory containing reviews')
     parser.add_argument('--num_folds', default=5, type=int, help='Number of folds for cross validation')
@@ -281,8 +281,8 @@ if __name__ == '__main__':
     parser.add_argument("--num_train_epochs", type=int, default=3)
     args = parser.parse_args()
 
-    if args.output_file == "eval.jsonl" and os.path.exists(args.model_name_or_path):
-        args.output_file = args.model_name_or_path + "_eval.jsonl"
+    if args.output_file == "eval.jsonl" and os.path.exists(args.lora_weights):
+        args.output_file = args.lora_weights + "_eval.jsonl"
 
     args.do_predict = False
     args.do_eval = False
