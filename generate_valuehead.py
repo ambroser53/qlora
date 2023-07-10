@@ -102,7 +102,7 @@ def main(args):
         num_labels=2,
     )
 
-    base_model.score.load_state_dict(torch.load(os.path.join(os.path.dirname(args.base_model_name_or_path), 'score_weight.pt')))
+    base_model.score.load_state_dict(torch.load(os.path.join(os.path.dirname(peft_config.base_model_name_or_path), 'score_weight.pt')))
 
     tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)
