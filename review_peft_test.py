@@ -214,12 +214,13 @@ def main(args):
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
 
-        results_output_dir = f'{review.split(".")[0]}_prompt_results.txt' if not args.do_train else f'{review.split(".")[0]}_prompt_results_train.txt'
+        results_output_dir = f'{review.split(".")[0]}_prompt_results.txt' if not args.review_result_prefix else f'{args.review_result_prefix}_{review.split(".")[0]}_prompt_results.txt'
 
         with open(results_output_dir, 'w+') as f:
             f.write(metrics.classification_report(review_y_true, review_y_pred))
 
     complete_results_dir = f'review_prompt_results_complete.txt' if not args.do_train else f'review_prompt_results_complete_train.txt'
+    complete_results_dir = complete_results_dir if not args.final_results_output_dir else args.final_results_output_dir
     with open(complete_results_dir, 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
 
@@ -279,6 +280,8 @@ if __name__ == '__main__':
     parser.add_argument("--num_beams", type=int, default=2)
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
     parser.add_argument("--num_train_epochs", type=int, default=3)
+    parser.add_argument("--final_results_output_dir", type=str, default=None)
+    parser.add_argument("--review_result_prefix", type=str, default=None)
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl" and os.path.exists(args.lora_weights):
