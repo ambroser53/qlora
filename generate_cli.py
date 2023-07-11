@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 import torch
+import wandb
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer, LlamaTokenizer
 from peft import PeftConfig, PeftModel
@@ -75,15 +76,21 @@ def main(args):
         max_new_tokens=args.max_new_tokens,
     )
 
-    print(args.lora_weights)
-    peft_config = PeftConfig.from_pretrained(args.lora_weights)
-    print("peft_config: ", peft_config)
+    if args.lora_weights is not None:
+        print(args.lora_weights)
+        peft_config = PeftConfig.from_pretrained(args.lora_weights)
+        print("peft_config: ", peft_config)
+        base_model_name_or_path = peft_config.base_model_name_or_path
+    elif args.model_name_or_path is not None:
+        base_model_name_or_path = args.model_name_or_path
+    else:
+        raise ValueError("Either --lora_weights or --model_name_or_path must be specified.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     base_model = AutoModelForCausalLM.from_pretrained(
-        peft_config.base_model_name_or_path,
+        base_model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
@@ -101,9 +108,9 @@ def main(args):
     )
 
     if args.llama_specifically:
-        tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+        tokenizer = LlamaTokenizer.from_pretrained(base_model_name_or_path)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
@@ -140,7 +147,8 @@ if __name__ == "__main__":
     parser.add_argument("--instruction", type=str, default=None)
     parser.add_argument("--input", type=str, default=None)
     parser.add_argument("--bits", type=int, default=4)
-    parser.add_argument("--lora_weights", type=str, default="tloen/alpaca-lora-7b")
+    parser.add_argument("--lora_weights", type=str, default=None)
+    parser.add_argument("--model_name_or_path", type=str, default=None)
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=128)
@@ -153,9 +161,16 @@ if __name__ == "__main__":
     parser.add_argument("--start_from", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--llama_specifically", action="store_true")
+    parser.add_argument("--wandb_project", type=str, default=None)
+    parser.add_argument("--wandb_entity", type=str, default=None)
     args = parser.parse_args()
 
-    if args.output_file == "eval.jsonl":
+    if args.wandb_project is not None and args.wandb_entity is not None:
+        run = wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+
+    if args.output_file == "eval.jsonl" and args.lora_weights is not None:
         args.output_file = args.lora_weights + "_eval.jsonl"
+    elif args.output_file == "eval.jsonl" and args.model_name_or_path is not None:
+        args.output_file = args.model_name_or_path + "_eval.jsonl"
 
     main(args)
