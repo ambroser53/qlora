@@ -41,7 +41,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
     if args.prompt_template == 'wizard13b':
         out_pattern = re.compile(
-            '.*(USER: \s+(?P<instruction>.+)\s+\\n\\n\s+(?P<input>.+)\s+\\n\\n ASSISTANT:\s+(?P<response>.*))',
+            '.*(USER: \s+(?P<instruction>.+)\s+\n\n\s+(?P<input>.+)\s+\n\n ASSISTANT:\s+(?P<response>.*))',
             re.DOTALL)
     else:
         out_pattern = re.compile(

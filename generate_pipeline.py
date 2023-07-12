@@ -39,7 +39,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 def generate(args, dataset, oracle, prompter):
     out_pattern = re.compile(
-        '.*(Abstract:\s+(?P<abstract>.+)\s+\\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
+        '.*(Abstract:\s+(?P<abstract>.+)\s+\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
         re.DOTALL)
 
     dataset = [dataset[i] for i in range(args.start_from, len(dataset))]

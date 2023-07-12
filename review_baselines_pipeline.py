@@ -36,7 +36,7 @@ def main(args):
     prompter = Prompter(args.prompt_template)
 
     out_pattern = re.compile(
-        '.*(Abstract:\s+(?P<abstract>.+)\s+\\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
+        '.*(Abstract:\s+(?P<abstract>.+)\s+ Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
         re.DOTALL)
     reviews = glob(f'{args.data_dir}/*.json')
     if len(reviews) == 0:
