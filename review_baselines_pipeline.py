@@ -33,6 +33,7 @@ DEFAULT_PAD_TOKEN = "[PAD]"
 
 
 def main(args):
+    prompter = Prompter(args.prompt_template)
 
     out_pattern = re.compile(
         '.*(Abstract:\s+(?P<abstract>.+)\s+\\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
@@ -70,17 +71,24 @@ def main(args):
                 match = out_pattern.match(example['input'])
                 if match is None:
                     continue
-                text = match.groupdict()
-                if 'abstract' in text and 'obj' in text and 'sel_cri' in text:
-                    text = text['obj'] + text['sel_cri'] + text['abstract']
-                elif 'abstract' in text and 'obj' in text:
-                    text = text['obj'] + text['abstract']
-                elif 'abstract' in text and 'sel_cri' in text:
-                    text = text['sel_cri'] + text['abstract']
-                elif 'abstract' in text:
-                    text = text['abstract']
+                if args.prompt_template is None:
+                    text = match.groupdict()
+                    if 'abstract' in text and 'obj' in text and 'sel_cri' in text:
+                        text = text['obj'] + text['sel_cri'] + text['abstract']
+                    elif 'abstract' in text and 'obj' in text:
+                        text = text['obj'] + text['abstract']
+                    elif 'abstract' in text and 'sel_cri' in text:
+                        text = text['sel_cri'] + text['abstract']
+                    elif 'abstract' in text:
+                        text = text['abstract']
+                    else:
+                        continue
+
+                    if args.max_token_len > 624:
+                        text = "Should this abstract be included or excluded from the review with the following objectives and selection criteria? " + text
                 else:
-                    continue
+                    text = prompter.generate_prompt(example['instruction'], example['input'])
+
                 label = example['label']
                 response = oracle(text, candidate_labels=["Included", "Excluded"], **tokenizer_kwargs)
 
@@ -107,6 +115,7 @@ def main(args):
             f.write(str(metrics.confusion_matrix(review_y_true, review_y_pred)))
 
     complete_results_dir = f'review_{args.model_name_or_path.split("/")[1]}_zeroshot_results_complete.txt'
+    complete_results_dir = os.path.join(args.data_dir, complete_results_dir)
     with open(complete_results_dir, 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
         f.write(str(metrics.confusion_matrix(y_true, y_pred)))
@@ -120,6 +129,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_folds', default=5, type=int, help='Number of folds for cross validation')
     parser.add_argument("--num_beams", type=int, default=2)
     parser.add_argument("--max_token_len", type=int, default=512)
+    parser.add_argument("--prompt_template", type=str, default=None, help="Whether using prompted model then use specified prompt template otherwise use pushing")
     args = parser.parse_args()
 
     main(args)

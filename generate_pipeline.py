@@ -1,16 +1,15 @@
 import argparse
 import json
+import os
 import sys
 import torch
 import wandb
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer, LlamaTokenizer
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig, AutoTokenizer, LlamaTokenizer, pipeline
 from peft import PeftConfig, PeftModel
 from utils.prompter import Prompter
-from datasets import load_dataset
-from torch.utils.data import DataLoader
-from transformers import DataCollatorForSeq2Seq
 import re
+from sklearn import metrics
 
 
 DEFAULT_BOS_TOKEN = '<s>'
@@ -38,50 +37,60 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 
-def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    if args.prompt_template == 'wizard13b':
-        out_pattern = re.compile(
-            '.*(USER: \s+(?P<instruction>.+)\s+\\n\\n\s+(?P<input>.+)\s+\\n\\n ASSISTANT:\s+(?P<response>.*))',
-            re.DOTALL)
-    else:
-        out_pattern = re.compile(
-            '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
-            re.DOTALL)
+def generate(args, dataset, oracle, prompter):
+    out_pattern = re.compile(
+        '.*(Abstract:\s+(?P<abstract>.+)\s+\\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
+        re.DOTALL)
 
-    original_columns = dataset['train'].column_names
-    dataset['train'] = dataset['train'].map(
-        lambda x: tokenizer(
-            prompter.generate_prompt(x['instruction'], x['input']),
-            truncation=True,
-            padding=False),
-        remove_columns=original_columns).select(range(args.start_from, len(dataset['train'])))
+    dataset = [dataset[i] for i in range(args.start_from, len(dataset))]
 
-    collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
-    batch_iter = DataLoader(dataset['train'], batch_size=args.batch_size, shuffle=False, collate_fn=collator)
+    for x in dataset:
+        x['prompt'] = prompter.generate_prompt(x['instruction'], x['input'])
 
-    for batch in tqdm(batch_iter, total=len(batch_iter)):
-        input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
-        output_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=generation_config)
+    y_pred = []
+    y_true = []
 
-        decoded_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    for example in tqdm(dataset, total=len(dataset)):
+        match = out_pattern.match(example['input'])
+        if match is None:
+            continue
+        if args.prompt_template is None:
+            text = match.groupdict()
+            if 'abstract' in text and 'obj' in text and 'sel_cri' in text:
+                text = text['obj'] + text['sel_cri'] + text['abstract']
+            elif 'abstract' in text and 'obj' in text:
+                text = text['obj'] + text['abstract']
+            elif 'abstract' in text and 'sel_cri' in text:
+                text = text['sel_cri'] + text['abstract']
+            elif 'abstract' in text:
+                text = text['abstract']
+            else:
+                continue
+
+            if args.max_token_len > 624:
+                text = "Should this abstract be included in the review? " + text
+        else:
+            text = prompter.generate_prompt(example['instruction'], example['input'])
+
+        response = oracle(text, candidate_labels=["Included", "Excluded"])
+        example['response'] = response
         
         with open(args.output_file, "a+") as f:
-            for output in decoded_outputs:
-                o = out_pattern.match(output).groupdict()
-                o['full_output'] = output
-                f.write(json.dumps(o) + '\n')
-        
-def main(args):
-    dataset = load_dataset("json", data_files=args.dataset)
-    prompter = Prompter(args.prompt_template)
+            f.write(json.dumps(example) + '\n')
 
-    generation_config = GenerationConfig(
-        temperature=0.6,
-        top_p=0.5,
-        top_k=40,
-        num_beams=args.num_beams,
-        max_new_tokens=args.max_new_tokens,
-    )
+        y_pred.append(response)
+        y_true.append(example[args.label_field_name])
+
+    results_output_dir = os.path.join(os.path.dirname(args.output_dir), "pipeline_results.txt")
+    with open(results_output_dir, 'w+') as f:
+        f.write(metrics.classification_report(y_true, y_pred))
+        f.write(str(metrics.confusion_matrix(y_true, y_pred)))
+
+
+def main(args):
+    with open(args.dataset, 'r') as f:
+        dataset = json.load(f)
+    prompter = Prompter(args.prompt_template)
 
     if args.lora_weights is not None:
         print(args.lora_weights)
@@ -114,10 +123,12 @@ def main(args):
         ),
     )
 
+    tokenizer_kwargs = {'max_length': args.max_token_len, 'truncation': True, 'return_tensors': 'pt',
+                        'model_max_length': args.max_token_len}
     if args.llama_specifically:
-        tokenizer = LlamaTokenizer.from_pretrained(base_model_name_or_path)
+        tokenizer = LlamaTokenizer.from_pretrained(base_model_name_or_path, **tokenizer_kwargs)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(base_model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(base_model_name_or_path, **tokenizer_kwargs)
 
     if args.lora_weights is not None:
         model = PeftModel.from_pretrained(base_model, args.lora_weights)
@@ -150,7 +161,9 @@ def main(args):
     if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
         model = torch.compile(model)
 
-    batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer)
+    oracle = pipeline(model=model, device=device, task="zero-shot-classification", tokenizer=tokenizer)
+
+    generate(args, dataset, oracle, prompter)
 
 
 if __name__ == "__main__":
@@ -161,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument("--bits", type=int, default=4)
     parser.add_argument("--lora_weights", type=str, default=None)
     parser.add_argument("--model_name_or_path", type=str, default=None)
-    parser.add_argument("--prompt_template", type=str, default="alpaca")
+    parser.add_argument("--prompt_template", type=str, default=None)
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=128)
     parser.add_argument("--fp16", type=bool, default=True)
@@ -175,6 +188,7 @@ if __name__ == "__main__":
     parser.add_argument("--llama_specifically", action="store_true")
     parser.add_argument("--wandb_project", type=str, default=None)
     parser.add_argument("--wandb_entity", type=str, default=None)
+    parser.add_argument('--label_field_name', default='label', type=str, help='Name of label field in dataset')
     args = parser.parse_args()
 
     if args.wandb_project is not None and args.wandb_entity is not None:
