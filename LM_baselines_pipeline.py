@@ -33,15 +33,17 @@ DEFAULT_PAD_TOKEN = "[PAD]"
 
 
 def main(args):
-    def preprocess_function(example):
-        return re.findall('(?<=Abstract: )(.*?)(?=\s*\\n Objectives:)', example)[0]
 
+    out_pattern = re.compile(
+        '.*(Abstract:\s+(?P<abstract>.+)\s+\\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
+        re.DOTALL)
     reviews = glob(f'{args.data_dir}/*.json')
     if len(reviews) == 0:
         raise ValueError(f'No reviews found in {args.data_dir}')
 
-    oracle = pipeline(model=args.model_name_or_path, task="zero-shot-classification")
     tokenizer_kwargs = {'max_length': args.max_token_len, 'truncation': True, 'return_tensors': 'pt', 'model_max_length': args.max_token_len}
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, **tokenizer_kwargs)
+    oracle = pipeline(model=args.model_name_or_path, task="zero-shot-classification", tokenizer=tokenizer)
 
     kf = KFold(n_splits=args.num_folds, shuffle=True, random_state=0)
     y_pred = []
@@ -65,7 +67,20 @@ def main(args):
             test_set = [dataset[i] for i in test_index]
 
             for example in test_set:
-                text = preprocess_function(example['input'])
+                match = out_pattern.match(example['input'])
+                if match is None:
+                    continue
+                text = match.groupdict()
+                if 'abstract' in text and 'obj' in text and 'sel_cri' in text:
+                    text = text['obj'] + text['sel_cri'] + text['abstract']
+                elif 'abstract' in text and 'obj' in text:
+                    text = text['obj'] + text['abstract']
+                elif 'abstract' in text and 'sel_cri' in text:
+                    text = text['sel_cri'] + text['abstract']
+                elif 'abstract' in text:
+                    text = text['abstract']
+                else:
+                    continue
                 label = example['label']
                 response = oracle(text, candidate_labels=["Included", "Excluded"], **tokenizer_kwargs)
 
@@ -89,10 +104,12 @@ def main(args):
 
         with open(results_output_dir, 'w+') as f:
             f.write(metrics.classification_report(review_y_true, review_y_pred))
+            f.write(str(metrics.confusion_matrix(review_y_true, review_y_pred)))
 
     complete_results_dir = f'review_{args.model_name_or_path.split("/")[1]}_zeroshot_results_complete.txt'
     with open(complete_results_dir, 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
+        f.write(str(metrics.confusion_matrix(y_true, y_pred)))
 
 
 if __name__ == '__main__':

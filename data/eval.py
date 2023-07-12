@@ -15,14 +15,15 @@ def main(args):
     try:
         results = pd.read_json(args.results_path, lines=args.lines)
     except:
-        with open(args.data_path, 'r') as f:
+        print(f'Error reading results file: {args.results_path}. Checking for errors in file...')
+        with open(args.results_path, 'r') as f:
             for i, line in enumerate(f):
                 try:
                     json.loads(line)
                 except:
                     raise ValueError(f'Error on line {i}')
                 
-        raise ValueError(f'Error reading {args.data_path}')
+        raise ValueError(f'Error reading {args.results_path}')
 
     label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included.': 'Included', 'Excluded:': 'Excluded'}
     dataset_inc_exc = pd.read_json(args.dataset_path)
