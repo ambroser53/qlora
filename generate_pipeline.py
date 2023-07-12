@@ -189,6 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb_project", type=str, default=None)
     parser.add_argument("--wandb_entity", type=str, default=None)
     parser.add_argument('--label_field_name', default='label', type=str, help='Name of label field in dataset')
+    parser.add_argument('--max_token_len', default=2048, type=int, help='Max token length for input')
     args = parser.parse_args()
 
     if args.wandb_project is not None and args.wandb_entity is not None:
