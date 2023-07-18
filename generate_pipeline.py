@@ -102,7 +102,7 @@ def main(args):
     else:
         raise ValueError("Either --lora_weights or --model_name_or_path must be specified.")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("0" if torch.cuda.is_available() else "cpu")
     print(device)
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     base_model = AutoModelForCausalLM.from_pretrained(
