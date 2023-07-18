@@ -81,7 +81,7 @@ def generate(args, dataset, oracle, prompter):
         y_pred.append(response)
         y_true.append(example[args.label_field_name])
 
-    results_output_dir = os.path.join(os.path.dirname(args.output_dir), "pipeline_results.txt")
+    results_output_dir = os.path.join(os.path.dirname(args.output_file), "pipeline_results.txt")
     with open(results_output_dir, 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
         f.write(str(metrics.confusion_matrix(y_true, y_pred)))
