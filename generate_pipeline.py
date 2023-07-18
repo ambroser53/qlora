@@ -102,7 +102,7 @@ def main(args):
     else:
         raise ValueError("Either --lora_weights or --model_name_or_path must be specified.")
 
-    device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -158,8 +158,8 @@ def main(args):
 
     model.eval()
 
-    if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
-        model = torch.compile(model)
+    # if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
+    #     model = torch.compile(model)
 
     oracle = pipeline(model=model, device=device, task="zero-shot-classification", tokenizer=tokenizer)
 
