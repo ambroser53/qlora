@@ -159,7 +159,7 @@ def main(args):
     # if torch.__version__ >= "2" and sys.platform != "win32" and args.compile:
     #     model = torch.compile(model)
 
-    oracle = pipeline(model=model, device=0, task="zero-shot-classification", tokenizer=tokenizer)
+    oracle = pipeline(model=model, device_map={'': 0}, task="zero-shot-classification", tokenizer=tokenizer)
 
     generate(args, dataset, oracle, prompter)
 
