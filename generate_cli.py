@@ -174,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument("--double_quant", type=bool, default=True)
     parser.add_argument("--quant_type", type=str, default="nf4")  # either fp4 or nf4
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
-    parser.add_argument("--num_beams", type=int, default=4)
+    parser.add_argument("--num_beams", type=int, default=2)
     parser.add_argument("--start_from", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--llama_specifically", action="store_true")
