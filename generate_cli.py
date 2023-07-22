@@ -48,8 +48,8 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
             '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
             re.DOTALL)
 
-    if args.add_prompt_contraint:
-        contraint = " Contraint: only return the answer as Included or Excluded."
+    if args.add_prompt_constraint:
+        contraint = " Constraint: only return the answer as Included or Excluded."
     else:
         contraint = ""
 
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--llama_specifically", action="store_true")
     parser.add_argument("--wandb_project", type=str, default=None)
     parser.add_argument("--wandb_entity", type=str, default=None)
-    parser.add_argument("--add_prompt_contraint", action="store_true")
+    parser.add_argument("--add_prompt_constraint", action="store_true")
     args = parser.parse_args()
 
     if args.wandb_project is not None and args.wandb_entity is not None:
