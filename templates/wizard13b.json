@@ -3,4 +3,4 @@
     "prompt_input": "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: {instruction}\n\n{input}\n\n ASSISTANT:",
     "prompt_no_input": "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: {instruction}\n\n ASSISTANT:",
     "response_split": "ASSISTANT:"
-}.*(USER:\s*(?P<instruction>.+) Constraint: only return the answer as Included or Excluded\.\n\nInput:(?P<input>.+)\s*ASSISTANT:\s*(?P<response>.*))
+}
