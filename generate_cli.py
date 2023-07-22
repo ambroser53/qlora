@@ -45,7 +45,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         constraint = ""
 
     if args.prompt_template == 'wizard13b':
-        p = r'USER:\s*(?P<instruction>((.|\n)*))' + re.escape(constraint) + r'\s*Abstract:(?P<input>((.|\n)*))ASSISTANT:\s*(?P<response>.*))'
+        p = r'.*(USER:\s*(?P<instruction>((.|\n)*))' + re.escape(constraint) + r'\s*Abstract:(?P<input>((.|\n)*))ASSISTANT:\s*(?P<response>.*))'
         out_pattern = re.compile(p, re.DOTALL)
     elif args.prompt_template == 'alpaca':
         p = r'.*(### Instruction:\s+(?P<instruction>((.|\n)*))' + re.escape(constraint) + r'\s+### Input:\s+(?P<input>((.|\n)*))\s+### Response:\s+(?P<response>.*))'
