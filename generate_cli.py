@@ -180,6 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--llama_specifically", action="store_true")
     parser.add_argument("--wandb_project", type=str, default=None)
     parser.add_argument("--wandb_entity", type=str, default=None)
+    parser.add_argument("--add_prompt_contraint", action="store_true")
     args = parser.parse_args()
 
     if args.wandb_project is not None and args.wandb_entity is not None:
