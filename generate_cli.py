@@ -39,19 +39,19 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    if args.prompt_template == 'wizard13b':
-        out_pattern = re.compile(
-            r'.*(USER: \s+(?P<instruction>.+)\s+\n\n\s+(?P<input>.+)\s+\n\n ASSISTANT:\s+(?P<response>.*))',
-            re.DOTALL)
-    else:
-        out_pattern = re.compile(
-            r'.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
-            re.DOTALL)
-
     if args.add_prompt_constraint:
         constraint = " Constraint: only return the answer as Included or Excluded."
     else:
         constraint = ""
+
+    if args.prompt_template == 'wizard13b':
+        p = r'.*(USER: \s+(?P<instruction>.+)' + re.escape(constraint) + r'\s+\n\n\s+(?P<input>.+)\s+\n\n ASSISTANT:\s+(?P<response>.*))'
+        out_pattern = re.compile(p, re.DOTALL)
+    elif args.prompt_template == 'alpaca':
+        p = r'.*(### Instruction:\s+(?P<instruction>.+)' + re.escape(constraint) + r'\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))'
+        out_pattern = re.compile(p, re.DOTALL)
+    else:
+        raise Exception('unsupported prompt template raised in group extraction regex')
 
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
