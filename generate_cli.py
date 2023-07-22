@@ -74,6 +74,8 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
             for output in decoded_outputs:
                 print(output)
                 o = out_pattern.match(output).groupdict()
+                if args.prompt_template == 'wizard13b':
+                    o['input'] = "Abstract:"+o['input']
                 o['full_output'] = output
                 f.write(json.dumps(o) + '\n')
         
