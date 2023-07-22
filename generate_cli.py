@@ -49,14 +49,14 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
             re.DOTALL)
 
     if args.add_prompt_constraint:
-        contraint = " Constraint: only return the answer as Included or Excluded."
+        constraint = " Constraint: only return the answer as Included or Excluded."
     else:
-        contraint = ""
+        constraint = ""
 
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
         lambda x: tokenizer(
-            prompter.generate_prompt(x['instruction']+contraint, x['input']),
+            prompter.generate_prompt(x['instruction']+constraint, x['input']),
             truncation=True,
             padding=False),
         remove_columns=original_columns).select(range(args.start_from, len(dataset['train'])))
@@ -72,6 +72,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         
         with open(args.output_file, "a+") as f:
             for output in decoded_outputs:
+                print(output)
                 o = out_pattern.match(output).groupdict()
                 o['full_output'] = output
                 f.write(json.dumps(o) + '\n')
