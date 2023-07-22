@@ -40,7 +40,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
     if args.add_prompt_constraint:
-        constraint = " Constraint: please return your answer as Included or Excluded."
+        constraint = " Constraint: please return your answer as simply \"Included\" or \"Excluded\"."
     else:
         constraint = ""
 
