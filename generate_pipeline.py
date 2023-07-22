@@ -73,6 +73,7 @@ def generate(args, dataset, oracle, prompter):
             text = prompter.generate_prompt(example['instruction'], example['input'])
 
         response_info = oracle(text, candidate_labels=["Included", "Excluded"])
+        response_info = {l: v for l, v in zip(response_info['labels'], response_info['scores'])}
         response = sorted(response_info.items(), key=lambda x: x[1], reverse=True)[0][0]
         example['response'] = response
         example['response_info'] = response_info
