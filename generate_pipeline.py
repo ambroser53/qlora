@@ -72,8 +72,10 @@ def generate(args, dataset, oracle, prompter):
         else:
             text = prompter.generate_prompt(example['instruction'], example['input'])
 
-        response = oracle(text, candidate_labels=["Included", "Excluded"])
+        response_info = oracle(text, candidate_labels=["Included", "Excluded"])
+        response = sorted(response_info.items(), key=lambda x: x[1], reverse=True)[0][0]
         example['response'] = response
+        example['response_info'] = response_info
         
         with open(args.output_file, "a+") as f:
             f.write(json.dumps(example) + '\n')
