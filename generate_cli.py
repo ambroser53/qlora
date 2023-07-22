@@ -41,11 +41,11 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
     if args.prompt_template == 'wizard13b':
         out_pattern = re.compile(
-            '.*(USER: \s+(?P<instruction>.+)\s+\n\n\s+(?P<input>.+)\s+\n\n ASSISTANT:\s+(?P<response>.*))',
+            r'.*(USER: \s+(?P<instruction>.+)\s+\n\n\s+(?P<input>.+)\s+\n\n ASSISTANT:\s+(?P<response>.*))',
             re.DOTALL)
     else:
         out_pattern = re.compile(
-            '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
+            r'.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
             re.DOTALL)
 
     if args.add_prompt_constraint:
@@ -72,7 +72,6 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         
         with open(args.output_file, "a+") as f:
             for output in decoded_outputs:
-                print(output)
                 o = out_pattern.match(output).groupdict()
                 o['full_output'] = output
                 f.write(json.dumps(o) + '\n')
