@@ -48,10 +48,15 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
             '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
             re.DOTALL)
 
+    if args.add_prompt_contraint:
+        contraint = " Contraint: only return the answer as Included or Excluded."
+    else:
+        contraint = ""
+
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
         lambda x: tokenizer(
-            prompter.generate_prompt(x['instruction'], x['input']),
+            prompter.generate_prompt(x['instruction']+contraint, x['input']),
             truncation=True,
             padding=False),
         remove_columns=original_columns).select(range(args.start_from, len(dataset['train'])))
