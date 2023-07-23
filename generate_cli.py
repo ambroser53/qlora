@@ -72,7 +72,6 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
         
         with open(args.output_file, "a+") as f:
             for output in decoded_outputs:
-                print(output)
                 o = out_pattern.match(output).groupdict()
                 if args.prompt_template == 'wizard13b':
                     o['input'] = "Abstract:"+o['input']
