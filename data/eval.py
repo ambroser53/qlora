@@ -33,7 +33,7 @@ def main(args):
     inc_exc = results[results['instruction'].str.contains('should the study be included or excluded?')]
     inc_exc = inc_exc.transform(lambda x: x.str.strip())
     if args.rogue_tokens:
-        print(inc_exc['response'].fillna("")[0].lower())
+        print(inc_exc['response'].fillna("")[2].lower())
         print(next(re.finditer(r'(?<=\s)(?:include|exclude)(?=\s)', inc_exc['response'].fillna("")[0].lower())))
         inc_exc['prediction'] = inc_exc['response'].fillna("").apply(lambda x: next(re.finditer(r'(?<=\s)(?:include|exclude)(?=\s)', x.lower()), ["error"])[0])
     else:
