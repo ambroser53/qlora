@@ -37,7 +37,7 @@ def main(args):
     if args.rogue_tokens:
         print(inc_exc['response'].fillna("error")[1].lower())
         print(next(re.finditer(r'(include)|(exclude)', inc_exc['response'].fillna("error")[1].lower()), "error")[0])
-        inc_exc['prediction'] = inc_exc['response'].fillna("").apply(lambda x: next(re.finditer(r'(?<=\s)(?:include|exclude)(?=\s)', x.lower()), ["error"])[0])
+        inc_exc['prediction'] = inc_exc['response'].fillna("").apply(lambda x: next(re.finditer(r'(include)|(exclude)', x.lower()), ["error"])[0])
     else:
         inc_exc['prediction'] = inc_exc['response'].str.split().str[0]
 
