@@ -25,7 +25,9 @@ def main(args):
                 
         raise ValueError(f'Error reading {args.results_path}')
 
-    label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included.': 'Included', 'Excluded:': 'Excluded'}
+    label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included': 'Included.', 'Excluded:': 'Excluded',
+                     'exclude': 'Excluded', 'included': 'Included', 'included.': 'Included', 'excluded': 'Excluded', 'included:': 'Included', 'excluded:': 'Excluded',
+                     'include': 'Included', 'exclude.': 'Excluded', 'excluded.': 'Excluded'}
     dataset_inc_exc = pd.read_json(args.dataset_path)
     dataset_inc_exc[args.label_field_name] = dataset_inc_exc[args.label_field_name].str.split().str[0]
     dataset_inc_exc[args.label_field_name] = dataset_inc_exc[args.label_field_name].transform(lambda x: label_mapping[x] if x in label_mapping else x)
