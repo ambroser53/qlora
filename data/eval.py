@@ -25,7 +25,7 @@ def main(args):
                 
         raise ValueError(f'Error reading {args.results_path}')
 
-    label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included': 'Included.', 'Excluded:': 'Excluded',
+    label_mapping = {'Include': 'Included', 'Exclude': 'Excluded', 'Insufficient': 'Included', 'Excluded.': 'Excluded', 'Included.': 'Included', 'Excluded:': 'Excluded',
                      'exclude': 'Excluded', 'included': 'Included', 'included.': 'Included', 'excluded': 'Excluded', 'included:': 'Included', 'excluded:': 'Excluded',
                      'include': 'Included', 'exclude.': 'Excluded', 'excluded.': 'Excluded'}
     dataset_inc_exc = pd.read_json(args.dataset_path)
@@ -38,6 +38,7 @@ def main(args):
         print(inc_exc['response'].fillna("error")[1].lower())
         print(next(re.finditer(r'(include)|(exclude)', inc_exc['response'].fillna("error")[1].lower()), "error")[0])
         inc_exc['prediction'] = inc_exc['response'].fillna("").apply(lambda x: next(re.finditer(r'(include)|(exclude)', x.lower()), ["error"])[0])
+        inc_exc['prediction'] = inc_exc['prediction'].transform(lambda x: label_mapping[x] if x in label_mapping else x)
     else:
         inc_exc['prediction'] = inc_exc['response'].str.split().str[0]
 
