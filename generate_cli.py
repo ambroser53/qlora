@@ -40,6 +40,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
     if args.add_prompt_constraint:
+        raise Exception('NOT USING CONSTRAINT RIGHT NOW')
         constraint = " Constraint: please return your answer as simply \"Included\" or \"Excluded\"."
         if args.prompt_template == 'wizard13b':
             p = r'.*(USER:\s*(?P<instruction>((.|\n)*))' + re.escape(
@@ -59,7 +60,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
         lambda x: tokenizer(
-            prompter.generate_prompt(x['instruction']+constraint, x['input']),
+            prompter.generate_prompt(x['instruction'], x['input']),
             truncation=True,
             padding=False),
         remove_columns=original_columns).select(range(args.start_from, len(dataset['train'])))
