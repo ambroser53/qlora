@@ -35,8 +35,6 @@ def main(args):
     inc_exc = results[results['instruction'].str.contains('should the study be included or excluded?')]
     inc_exc = inc_exc.transform(lambda x: x.str.strip())
     if args.rogue_tokens:
-        print(inc_exc['response'].fillna("error")[1].lower())
-        print(next(re.finditer(r'(include)|(exclude)', inc_exc['response'].fillna("error")[1].lower()), "error")[0])
         inc_exc['prediction'] = inc_exc['response'].fillna("").apply(lambda x: next(re.finditer(r'(include)|(exclude)', x.lower()), ["error"])[0])
         inc_exc['prediction'] = inc_exc['prediction'].transform(lambda x: label_mapping[x] if x in label_mapping else x)
     else:
