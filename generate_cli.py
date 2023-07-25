@@ -54,7 +54,7 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
             raise Exception('unsupported prompt template raised in group extraction regex')
     else:
         out_pattern = re.compile(
-            '.*(Abstract:\s+(?P<abstract>.+)\s+\\n Objectives:\s+(?P<obj>.+)\s+Selection Criteria:\s+(?P<sel_cri>.*))',
+            '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
             re.DOTALL)
 
     original_columns = dataset['train'].column_names
