@@ -71,11 +71,12 @@ def main(args):
     prompter = Prompter(args.prompt_template)
 
     generation_config = GenerationConfig(
-        temperature=0.6,
+        temperature=args.temperature,
         top_p=0.5,
         top_k=40,
         num_beams=args.num_beams,
         max_new_tokens=args.max_new_tokens,
+        do_sample=not args.dont_sample,
     )
 
     print(args.lora_weights)
@@ -156,6 +157,8 @@ if __name__ == "__main__":
     parser.add_argument("--start_from", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--llama_specifically", action="store_true")
+    parser.add_argument("--temperature", type=float, default=0.6)
+    parser.add_argument("--dont_sample", action="store_true")
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
