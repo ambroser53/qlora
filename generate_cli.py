@@ -37,9 +37,10 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    out_pattern = re.compile(
+    alpaca_pattern = re.compile(
         '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
         re.DOTALL)
+    wizard_pattern = re.compile('.*(USER: (?P<instruction>.*)\n{2})(?P<input>.*)(\s{2} ASSISTANT: (?P<response>.*))', re.DOTALL)
 
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
@@ -61,9 +62,10 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
 
         with open(args.output_file, "a+") as f:
             for output in decoded_outputs:
-                o = out_pattern.match(output).groupdict()
-                o['full_output'] = output
-                f.write(json.dumps(o) + '\n')
+                if args.prompt_template == 'alpaca':
+                    f.write(json.dumps(alpaca_pattern.match(output).groupdict()) + '\n')
+                elif args.prompt_template == 'wizard13b':
+                    f.write(json.dumps(wizard_pattern.match(output).groupdict()) + '\n')
 
 
 def main(args):
