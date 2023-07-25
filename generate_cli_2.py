@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 import torch
+import wandb
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer, LlamaTokenizer
 from peft import PeftConfig, PeftModel
@@ -10,6 +11,7 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from transformers import DataCollatorForSeq2Seq
 import re
+
 
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
@@ -37,9 +39,23 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    out_pattern = re.compile(
-        '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
-        re.DOTALL)
+    if args.add_prompt_constraint:
+        raise Exception('NOT USING CONSTRAINT RIGHT NOW')
+        constraint = " Constraint: please return your answer as simply \"Included\" or \"Excluded\"."
+        if args.prompt_template == 'wizard13b':
+            p = r'.*(USER:\s*(?P<instruction>((.|\n)*))' + re.escape(
+                constraint) + r'\s*Abstract:(?P<input>((.|\n)*))ASSISTANT:\s*(?P<response>.*))'
+            out_pattern = re.compile(p, re.DOTALL)
+        elif args.prompt_template == 'alpaca':
+            p = r'.*(### Instruction:\s+(?P<instruction>((.|\n)*))' + re.escape(
+                constraint) + r'\s+### Input:\s+(?P<input>((.|\n)*))\s+### Response:\s+(?P<response>.*))'
+            out_pattern = re.compile(p, re.DOTALL)
+        else:
+            raise Exception('unsupported prompt template raised in group extraction regex')
+    else:
+        out_pattern = re.compile(
+            '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
+            re.DOTALL)
 
     original_columns = dataset['train'].column_names
     dataset['train'] = dataset['train'].map(
@@ -54,18 +70,18 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
 
     for batch in tqdm(batch_iter, total=len(batch_iter)):
         input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
-        output_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask,
-                                    generation_config=generation_config)
+        output_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=generation_config)
 
         decoded_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-
+        
         with open(args.output_file, "a+") as f:
             for output in decoded_outputs:
                 o = out_pattern.match(output).groupdict()
+                if args.prompt_template == 'wizard13b':
+                    o['input'] = "Abstract:"+o['input']
                 o['full_output'] = output
                 f.write(json.dumps(o) + '\n')
-
-
+        
 def main(args):
     dataset = load_dataset("json", data_files=args.dataset)
     prompter = Prompter(args.prompt_template)
@@ -78,15 +94,21 @@ def main(args):
         max_new_tokens=args.max_new_tokens,
     )
 
-    print(args.lora_weights)
-    peft_config = PeftConfig.from_pretrained(args.lora_weights)
-    print("peft_config: ", peft_config)
+    if args.lora_weights is not None:
+        print(args.lora_weights)
+        peft_config = PeftConfig.from_pretrained(args.lora_weights)
+        print("peft_config: ", peft_config)
+        base_model_name_or_path = peft_config.base_model_name_or_path
+    elif args.model_name_or_path is not None:
+        base_model_name_or_path = args.model_name_or_path
+    else:
+        raise ValueError("Either --lora_weights or --model_name_or_path must be specified.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     base_model = AutoModelForCausalLM.from_pretrained(
-        peft_config.base_model_name_or_path,
+        base_model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
@@ -104,10 +126,15 @@ def main(args):
     )
 
     if args.llama_specifically:
-        tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+        tokenizer = LlamaTokenizer.from_pretrained(base_model_name_or_path)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
-    model = PeftModel.from_pretrained(base_model, args.lora_weights)
+        tokenizer = AutoTokenizer.from_pretrained(base_model_name_or_path)
+
+    if args.lora_weights is not None:
+        model = PeftModel.from_pretrained(base_model, args.lora_weights)
+    else:
+        model = base_model
+
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
     print(model.hf_device_map)
@@ -143,7 +170,8 @@ if __name__ == "__main__":
     parser.add_argument("--instruction", type=str, default=None)
     parser.add_argument("--input", type=str, default=None)
     parser.add_argument("--bits", type=int, default=4)
-    parser.add_argument("--lora_weights", type=str, default="tloen/alpaca-lora-7b")
+    parser.add_argument("--lora_weights", type=str, default=None)
+    parser.add_argument("--model_name_or_path", type=str, default=None)
     parser.add_argument("--prompt_template", type=str, default="alpaca")
     parser.add_argument("--compile", type=bool, default=False)
     parser.add_argument("--max_new_tokens", type=int, default=128)
@@ -152,13 +180,21 @@ if __name__ == "__main__":
     parser.add_argument("--double_quant", type=bool, default=True)
     parser.add_argument("--quant_type", type=str, default="nf4")  # either fp4 or nf4
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
-    parser.add_argument("--num_beams", type=int, default=4)
+    parser.add_argument("--num_beams", type=int, default=2)
     parser.add_argument("--start_from", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--llama_specifically", action="store_true")
+    parser.add_argument("--wandb_project", type=str, default=None)
+    parser.add_argument("--wandb_entity", type=str, default=None)
+    parser.add_argument("--add_prompt_constraint", action="store_true")
     args = parser.parse_args()
 
-    if args.output_file == "eval.jsonl":
+    if args.wandb_project is not None and args.wandb_entity is not None:
+        run = wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+
+    if args.output_file == "eval.jsonl" and args.lora_weights is not None:
         args.output_file = args.lora_weights + "_eval.jsonl"
+    elif args.output_file == "eval.jsonl" and args.model_name_or_path is not None:
+        args.output_file = args.model_name_or_path + "_eval.jsonl"
 
     main(args)
