@@ -59,13 +59,19 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
                                     generation_config=generation_config)
 
         decoded_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+        full_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)
 
         with open(args.output_file, "a+") as f:
-            for output in decoded_outputs:
+            for output, full in zip(decoded_outputs, full_outputs):
+
                 if args.prompt_template == 'alpaca':
-                    f.write(json.dumps(alpaca_pattern.match(output).groupdict()) + '\n')
+                    o = alpaca_pattern.match(output).groupdict()
+                    o['full'] = full
+                    f.write(json.dumps(o) + '\n')
                 elif args.prompt_template == 'wizard13b':
-                    f.write(json.dumps(wizard_pattern.match(output).groupdict()) + '\n')
+                    o = wizard_pattern.match(output).groupdict()
+                    o['full'] = full
+                    f.write(json.dumps(o) + '\n')
 
 
 def main(args):
