@@ -33,16 +33,17 @@ class Prompter(object):
         instruction: str,
         input: Union[None, str] = None,
         label: Union[None, str] = None,
+        **kwargs,
     ) -> str:
         # returns the full prompt from instruction and optional input
         # if a label (=response, =output) is provided, it's also appended.
         if input:
             res = self.template["prompt_input"].format(
-                instruction=instruction, input=input
+                instruction=instruction, input=input, **kwargs
             )
         else:
             res = self.template["prompt_no_input"].format(
-                instruction=instruction
+                instruction=instruction, **kwargs
             )
         if label:
             res = f"{res}{label}"
