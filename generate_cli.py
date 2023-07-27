@@ -1,92 +1,21 @@
 import argparse
 import json
 import sys
-from dataclasses import dataclass
-from typing import Optional, Any, Union
-
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer, LlamaTokenizer, \
-    PreTrainedTokenizerBase
+from transformers import AutoModelForCausalLM, GenerationConfig, BitsAndBytesConfig, AutoTokenizer
 from peft import PeftConfig, PeftModel
-from transformers.utils import PaddingStrategy
-
 from utils.prompter import Prompter
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from transformers import DataCollatorForSeq2Seq
 import re
-import numpy as np
+
 
 DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
 DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
-
-
-@dataclass
-class DataCollatorForCausalLM:
-
-    tokenizer: PreTrainedTokenizerBase
-    model: Optional[Any] = None
-    padding: Union[bool, str, PaddingStrategy] = True
-    max_length: Optional[int] = None
-    pad_to_multiple_of: Optional[int] = None
-    label_pad_token_id: int = -100
-    return_tensors: str = "pt"
-
-    def __call__(self, features, return_tensors=None):
-        if return_tensors is None:
-            return_tensors = self.return_tensors
-        labels = [feature["labels"] for feature in features] if "labels" in features[0].keys() else None
-
-        if labels is not None:
-            max_label_length = max(len(l) for l in labels)
-
-            if self.pad_to_multiple_of is not None:
-                max_label_length = (
-                    (max_label_length + self.pad_to_multiple_of - 1)
-                    // self.pad_to_multiple_of
-                    * self.pad_to_multiple_of
-                )
-
-            padding_side = self.tokenizer.padding_side
-            for feature in features:
-                remainder = [self.label_pad_token_id] * (max_label_length - len(feature["labels"]))
-                if isinstance(feature["labels"], list):
-                    feature["labels"] = (
-                        feature["labels"] + remainder if padding_side == "right" else remainder + feature["labels"]
-                    )
-                elif padding_side == "right":
-                    feature["labels"] = np.concatenate([feature["labels"], remainder]).astype(np.int64)
-                else:
-                    feature["labels"] = np.concatenate([remainder, feature["labels"]]).astype(np.int64)
-
-                remainder = [self.tokenizer.pad_token_id] * (max_label_length - len(feature["input_ids"]))
-                attn_remainder = [0] * (max_label_length - len(feature["attention_mask"]))
-                if isinstance(feature["input_ids"], list):
-                    feature["input_ids"] = (
-                        feature["input_ids"] + remainder if padding_side == "right" else remainder + feature["input_ids"]
-                    )
-                    feature["attention_mask"] = (
-                        feature["attention_mask"] + attn_remainder if padding_side == "right" else attn_remainder + feature["attention_mask"]
-                    )
-                elif padding_side == "right":
-                    feature["input_ids"] = np.concatenate([feature["input_ids"], remainder]).astype(np.int64)
-                    feature['attention_mask'] = np.concatenate([feature['attention_mask'], np.zeros_like(remainder)]).astype(np.int64)
-                else:
-                    feature["input_ids"] = np.concatenate([remainder, feature["input_ids"]]).astype(np.int64)
-                    feature['attention_mask'] = np.concatenate([np.zeros_like(remainder), feature['attention_mask']]).astype(np.int64)
-
-        features = self.tokenizer.pad(
-            features,
-            padding=self.padding,
-            max_length=self.max_length,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors=return_tensors,
-        )
-
-        return features
 
 
 def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
@@ -109,9 +38,7 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
 
 
 def batch_generate(args, dataset, device, generation_config, model, prompter, tokenizer):
-    alpaca_pattern = re.compile(
-        '.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))',
-        re.DOTALL)
+    alpaca_pattern = re.compile('.*(### Instruction:\s+(?P<instruction>.+)\s+### Input:\s+(?P<input>.+)\s+### Response:\s+(?P<response>.*))', re.DOTALL)
     wizard_pattern = re.compile('.*(USER: (?P<instruction>.*)\n{2})(?P<input>.*)(\s{2} ASSISTANT: (?P<response>.*))', re.DOTALL)
 
     original_columns = dataset['train'].column_names
@@ -122,42 +49,33 @@ def batch_generate(args, dataset, device, generation_config, model, prompter, to
             padding=False),
         remove_columns=original_columns).select(range(args.start_from, len(dataset['train'])))
 
-    tokenizer.padding_side = "left"
-    collator = DataCollatorForCausalLM(tokenizer, return_tensors="pt", padding=True)
+    collator = DataCollatorForSeq2Seq(tokenizer, return_tensors="pt", padding=True)
     batch_iter = DataLoader(dataset['train'], batch_size=args.batch_size, shuffle=False, collate_fn=collator)
 
     for batch in tqdm(batch_iter, total=len(batch_iter)):
         input_ids, attention_mask = batch['input_ids'].to(device), batch['attention_mask'].to(device)
-        output_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask,
-                                    generation_config=generation_config)
+        output_ids = model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=generation_config)
 
         decoded_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-        full_outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)
-
+        
         with open(args.output_file, "a+") as f:
-            for output, full in zip(decoded_outputs, full_outputs):
-
+            for output in decoded_outputs:
                 if args.prompt_template == 'alpaca':
-                    o = alpaca_pattern.match(output).groupdict()
-                    o['full'] = full
-                    f.write(json.dumps(o) + '\n')
-                elif args.prompt_template == 'wizard13b':
-                    o = wizard_pattern.match(output).groupdict()
-                    o['full'] = full
-                    f.write(json.dumps(o) + '\n')
-
-
+                    f.write(json.dumps(alpaca_pattern.match(output).groupdict()) + '\n')
+                if args.prompt_template == 'wizard13b':
+                    f.write(json.dumps(wizard_pattern.match(output).groupdict()) + '\n')
+        
 def main(args):
     dataset = load_dataset("json", data_files=args.dataset)
     prompter = Prompter(args.prompt_template)
 
     generation_config = GenerationConfig(
         temperature=args.temperature,
+        do_sample=not args.no_sample,
         top_p=0.5,
         top_k=40,
         num_beams=args.num_beams,
         max_new_tokens=args.max_new_tokens,
-        do_sample=not args.dont_sample,
     )
 
     print(args.lora_weights)
@@ -185,10 +103,7 @@ def main(args):
         ),
     )
 
-    if args.llama_specifically:
-        tokenizer = LlamaTokenizer.from_pretrained(peft_config.base_model_name_or_path)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
     model = PeftModel.from_pretrained(base_model, args.lora_weights)
     print("finetune model is_loaded_in_8bit: ", model.is_loaded_in_8bit)
     print("finetune model is_loaded_in_4bit: ", model.is_loaded_in_4bit)
@@ -237,9 +152,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_beams", type=int, default=4)
     parser.add_argument("--start_from", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--llama_specifically", action="store_true")
     parser.add_argument("--temperature", type=float, default=0.6)
-    parser.add_argument("--dont_sample", action="store_true")
+    parser.add_argument("--no_sample", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl":
