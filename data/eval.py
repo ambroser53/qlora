@@ -44,12 +44,16 @@ def main(args):
     merged = merged.dropna(subset=['prediction'])
 
     try:
-        print(metrics.classification_report(merged[args.label_field_name], merged['prediction'], digits=2, labels=['Included', 'Excluded']))
-        print(metrics.confusion_matrix(merged[args.label_field_name], merged['prediction'], labels=['Included', 'Excluded']))
+        class_report = metrics.classification_report(merged[args.label_field_name], merged['prediction'], digits=2, labels=['Included', 'Excluded'], output_dict=True)
+        conf_mat = metrics.confusion_matrix(merged[args.label_field_name], merged['prediction'], labels=['Included', 'Excluded'])
     except:
-        print(metrics.classification_report(merged[args.label_field_name+'_x'], merged['prediction'], digits=2))
-        print(metrics.confusion_matrix(merged[args.label_field_name+'_x'], merged['prediction']))
+        class_report = metrics.classification_report(merged[args.label_field_name+'_x'], merged['prediction'], digits=2, output_dict=True)
+        conf_mat = metrics.confusion_matrix(merged[args.label_field_name+'_x'], merged['prediction'])
     
+    # print(pd.DataFrame(class_report).T)
+    # print(conf_mat)
+
+    return pd.DataFrame(class_report).T, conf_mat
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
