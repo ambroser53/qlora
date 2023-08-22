@@ -18,7 +18,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, default='elinas/llama-13b-hf-transformers-4.29', help='Name or path to base model')
+    parser.add_argument('--model_name_or_path', type=str, default='elinas/llama-7b-hf-transformers-4.29', help='Name or path to base model')
     parser.add_argument('--lora_weights', type=str, default=None, help='Output directory')
     parser.add_argument('--output_dir', type=str, default='./', help='Output directory')
     args = parser.parse_args()

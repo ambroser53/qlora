@@ -7,7 +7,7 @@ from glob import glob
 from sklearn.model_selection import KFold
 from sklearn import metrics
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, get_linear_schedule_with_warmup, \
-    HfArgumentParser, Seq2SeqTrainingArguments, Seq2SeqTrainer, DataCollatorForSeq2Seq
+    HfArgumentParser, Seq2SeqTrainingArguments, Seq2SeqTrainer, DataCollatorForSeq2Seq, PreTrainedTokenizerBase
 from peft import PeftConfig, PeftModel, PromptTuningConfig, TaskType, PromptTuningInit, get_peft_model, \
     prepare_model_for_kbit_training
 import torch
@@ -17,9 +17,11 @@ import sys
 from tqdm import tqdm
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, Sequence, Optional
+from typing import Dict, Sequence, Optional, Any, Union
 import re
 from datasets import load_dataset, load_from_disk
+from transformers.utils import PaddingStrategy
+
 from qlora import make_data_module
 from utils.prompter import Prompter
 
@@ -28,6 +30,71 @@ DEFAULT_BOS_TOKEN = '<s>'
 DEFAULT_EOS_TOKEN = '</s>'
 DEFAULT_UNK_TOKEN = '<unk>'
 DEFAULT_PAD_TOKEN = "[PAD]"
+
+
+@dataclass
+class DataCollatorForCausalLM:
+
+    tokenizer: PreTrainedTokenizerBase
+    model: Optional[Any] = None
+    padding: Union[bool, str, PaddingStrategy] = True
+    max_length: Optional[int] = None
+    pad_to_multiple_of: Optional[int] = None
+    label_pad_token_id: int = -100
+    return_tensors: str = "pt"
+
+    def __call__(self, features, return_tensors=None):
+        if return_tensors is None:
+            return_tensors = self.return_tensors
+        labels = [feature["labels"] for feature in features] if "labels" in features[0].keys() else None
+
+        if labels is not None:
+            max_label_length = max(len(l) for l in labels)
+
+            if self.pad_to_multiple_of is not None:
+                max_label_length = (
+                    (max_label_length + self.pad_to_multiple_of - 1)
+                    // self.pad_to_multiple_of
+                    * self.pad_to_multiple_of
+                )
+
+            padding_side = self.tokenizer.padding_side
+            for feature in features:
+                remainder = [self.label_pad_token_id] * (max_label_length - len(feature["labels"]))
+                if isinstance(feature["labels"], list):
+                    feature["labels"] = (
+                        feature["labels"] + remainder if padding_side == "right" else remainder + feature["labels"]
+                    )
+                elif padding_side == "right":
+                    feature["labels"] = np.concatenate([feature["labels"], remainder]).astype(np.int64)
+                else:
+                    feature["labels"] = np.concatenate([remainder, feature["labels"]]).astype(np.int64)
+
+                remainder = [self.tokenizer.pad_token_id] * (max_label_length - len(feature["input_ids"]))
+                attn_remainder = [0] * (max_label_length - len(feature["attention_mask"]))
+                if isinstance(feature["input_ids"], list):
+                    feature["input_ids"] = (
+                        feature["input_ids"] + remainder if padding_side == "right" else remainder + feature["input_ids"]
+                    )
+                    feature["attention_mask"] = (
+                        feature["attention_mask"] + attn_remainder if padding_side == "right" else attn_remainder + feature["attention_mask"]
+                    )
+                elif padding_side == "right":
+                    feature["input_ids"] = np.concatenate([feature["input_ids"], remainder]).astype(np.int64)
+                    feature['attention_mask'] = np.concatenate([feature['attention_mask'], np.zeros_like(remainder)]).astype(np.int64)
+                else:
+                    feature["input_ids"] = np.concatenate([remainder, feature["input_ids"]]).astype(np.int64)
+                    feature['attention_mask'] = np.concatenate([np.zeros_like(remainder), feature['attention_mask']]).astype(np.int64)
+
+        features = self.tokenizer.pad(
+            features,
+            padding=self.padding,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors=return_tensors,
+        )
+
+        return features
 
 
 @dataclass
@@ -94,9 +161,15 @@ def main(args):
     if len(reviews) == 0:
         raise ValueError(f'No reviews found in {args.data_dir}')
 
+    if args.lora_weights:
+        peft_config = PeftConfig.from_pretrained(args.lora_weights)
+        model_name_or_path = peft_config.base_model_name_or_path
+    else:
+        model_name_or_path = args.model_name_or_path
+
     compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
     base_model = AutoModelForCausalLM.from_pretrained(
-        args.model_name_or_path,
+        model_name_or_path,
         return_dict=True,
         load_in_4bit=args.bits == 4,
         load_in_8bit=args.bits == 8,
@@ -146,9 +219,6 @@ def main(args):
 
     if not args.bits == 4 and not args.bits == 8:
         base_model.half()
-
-    # if torch.__version__ >= "2" and sys.platform != "win32":
-    #     model = torch.compile(model)
 
     # Prompt tuning bits
     prompt_config = PromptTuningConfig(

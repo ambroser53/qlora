@@ -89,7 +89,7 @@ def main(args):
                 else:
                     text = prompter.generate_prompt(example['instruction'], example['input'])
 
-                label = example['label']
+                label = example[args.label_name].split()[0]
                 response = oracle(text, candidate_labels=["Included", "Excluded"], **tokenizer_kwargs)
 
                 response = {l: v for l, v in zip(response['labels'], response['scores'])}
@@ -108,13 +108,13 @@ def main(args):
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
 
-        results_output_dir = f'{review.split(".")[0]}_{args.model_name_or_path.split("/")[1]}_zeroshot_results.txt'
+        results_output_dir = f'{review.split(".")[0]}_{args.model_name_or_path.split("/")[1]}_zeroshotp_results.txt'
 
         with open(results_output_dir, 'w+') as f:
             f.write(metrics.classification_report(review_y_true, review_y_pred))
             f.write(str(metrics.confusion_matrix(review_y_true, review_y_pred)))
 
-    complete_results_dir = f'review_{args.model_name_or_path.split("/")[1]}_zeroshot_results_complete.txt'
+    complete_results_dir = f'review_{args.model_name_or_path.split("/")[1]}_zeroshotp_results_complete.txt'
     complete_results_dir = os.path.join(args.data_dir, complete_results_dir)
     with open(complete_results_dir, 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
@@ -130,6 +130,7 @@ if __name__ == '__main__':
     parser.add_argument("--num_beams", type=int, default=2)
     parser.add_argument("--max_token_len", type=int, default=512)
     parser.add_argument("--prompt_template", type=str, default=None, help="Whether using prompted model then use specified prompt template otherwise use pushing")
+    parser.add_argument("--label_name", type=str, default="label", help="Name of label in dataset")
     args = parser.parse_args()
 
     main(args)

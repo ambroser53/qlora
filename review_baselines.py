@@ -102,7 +102,7 @@ def main(args):
         args.dataset = review
         data_module = {
             "train_dataset": load_dataset("json", data_files=args.dataset).map(preprocess_function)['train'],
-            "data_collator": DataCollatorWithPadding(tokenizer=tokenizer),
+     #       "data_collator": DataCollatorWithPadding(tokenizer=tokenizer)
         }
         dataset = data_module['train_dataset']
 
@@ -126,7 +126,13 @@ def main(args):
                     num_labels=2,
                 )
 
-                data_module['train_dataset'] = dataset.select(train_index)
+                def remap(batch):
+                    label_map = {"Included": 0, "Excluded": 1}
+                    batch['label'] = label_map[batch['label']]
+                    return batch
+
+                data_module['train_dataset'] = dataset.select(train_index).remove_columns([c for c in dataset.column_names if c not in ['input_ids', 'attention_mask', 'label']])
+                data_module['train_dataset'] = data_module['train_dataset'].map(remap)
 
                 hfparser = HfArgumentParser((
                     TrainingArguments
@@ -198,12 +204,12 @@ def main(args):
         y_pred.extend(review_y_pred)
         y_true.extend(review_y_true)
 
-        results_output_dir = f'{review.split(".")[0]}_{args.model_name_or_path.split("/")[1]}_results.txt' if not args.do_train else f'{review.split(".")[0]}_{args.model_name_or_path.split("/")[1]}_results_train.txt'
+        results_output_dir = f'{review.split(".")[0]}_{args.model_name_or_path.split("/")[1]}_zs_results.txt' if not args.do_train else f'{review.split(".")[0]}_{args.model_name_or_path.split("/")[1]}_results_train.txt'
 
         with open(results_output_dir, 'w+') as f:
             f.write(metrics.classification_report(review_y_true, review_y_pred))
 
-    complete_results_dir = f'review_{args.model_name_or_path.split("/")[1]}_results_complete.txt' if not args.do_train else f'review_{args.model_name_or_path.split("/")[1]}_results_complete_train.txt'
+    complete_results_dir = f'review_{args.model_name_or_path.split("/")[1]}_zs_results_complete.txt' if not args.do_train else f'review_{args.model_name_or_path.split("/")[1]}_results_complete_train.txt'
     with open(complete_results_dir, 'w+') as f:
         f.write(metrics.classification_report(y_true, y_pred))
 
@@ -226,12 +232,12 @@ if __name__ == '__main__':
     parser.add_argument("--target_max_len", type=int, default=384)
     parser.add_argument("--gradient_checkpointing", type=bool, default=True)
     parser.add_argument("--lr", type=float, default=0.0002)
-    parser.add_argument("--train_batch_size", type=int, default=8)
+    parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=4)
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_beams", type=int, default=2)
     parser.add_argument("--output_file", type=str, default="eval.jsonl")
-    parser.add_argument("--num_train_epochs", type=int, default=3)
+    parser.add_argument("--num_train_epochs", type=int, default=1)
     args = parser.parse_args()
 
     if args.output_file == "eval.jsonl" and os.path.exists(args.model_name_or_path):

@@ -1,0 +1,5 @@
+{
+    "description": "Template used for zero-Shot GPT exclusion reasons.",
+    "prompt_input": "I am screening papers for a systematic literature review.\nThe objectives of the systematic review are {objectives}\nThe selection criteria of the review are {selection_criteria}\nThe study should focus exclusively on this topic and be within this selection criteria.\n\nThe following article has been excluded. Please provide the reason why it has been excluded as best you can.\nI give the abstract of the article as input.\nBe concise and only provide a single reason.\n\nAbstract: {abstract}",
+    "prompt_no_input": "I am screening papers for a systematic literature review.\nThe objectives of the systematic review are {objectives}\nThe selection criteria of the review are {selection_criteria}\nThe study should focus exclusively on this topic and be within this selection criteria.\n\nThe following article has been excluded. Please provide the reason why it has been excluded as best you can.\nI give the abstract of the article as input.\nBe concise and only provide a single reason.\n\nAbstract: {abstract}"
+}
